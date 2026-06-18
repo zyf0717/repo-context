@@ -151,6 +151,15 @@ FASTCONTEXT_MODEL=your-model-name \
 uv run pytest tests/e2e
 ```
 
+To print per-prompt timing for the current-repo multi-prompt e2e:
+
+```bash
+REPO_CONTEXT_RUN_E2E=1 \
+FASTCONTEXT_BASE_URL=http://localhost:8000/v1 \
+FASTCONTEXT_MODEL=your-model-name \
+uv run pytest tests/e2e/test_current_repo_multi_prompt_timing.py -s
+```
+
 ## Scope
 
 In scope:
