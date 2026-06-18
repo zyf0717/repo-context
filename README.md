@@ -19,9 +19,45 @@ Primary planning artifacts:
 - [Task breakdown](specs/001-repo-context-explorer/tasks.md)
 - [Implementation order](docs/implementation-order.md)
 
-## Interfaces
+## Usage
 
-CLI MVP:
+Use the CLI first for local debugging, scripts, CI checks, and one-off
+questions. It has the smallest moving parts and exposes the exact core result.
+
+Use MCP when an MCP-capable editor or agent should call repository exploration
+as a tool during its workflow. MCP delegates to the same core as the CLI.
+
+### Configure
+
+Prefer `.repo-context.toml` for stable project-local settings:
+
+```bash
+cp .repo-context.toml.example .repo-context.toml
+```
+
+Use environment variables for temporary overrides, CI, or secrets:
+
+```bash
+cp .env.example .env
+```
+
+`repo-context` reads real environment variables from the process environment;
+it does not load `.env` by itself. Configure at least:
+
+```text
+FASTCONTEXT_BASE_URL=http://localhost:8000/v1
+FASTCONTEXT_MODEL=your-model-name
+```
+
+Configuration precedence:
+
+```text
+defaults < .repo-context.toml < environment variables < CLI overrides
+```
+
+### CLI
+
+Text output:
 
 ```bash
 uv run repo-context explore \
@@ -31,7 +67,24 @@ uv run repo-context explore \
   --citation
 ```
 
-MCP adapter:
+JSON output:
+
+```bash
+uv run repo-context explore \
+  --query "Find the request validation logic" \
+  --repo . \
+  --format json
+```
+
+### MCP
+
+Install optional MCP dependencies:
+
+```bash
+uv sync --extra mcp
+```
+
+Development server command:
 
 ```bash
 uv run repo-context mcp --transport stdio
@@ -39,15 +92,32 @@ uv run repo-context mcp --transport stdio
 
 Tool: `explore_repository(query, repo_root?, max_turns?, citation?)`
 
-Configuration sources:
+Generic MCP client config shape:
 
-- Environment variables such as `FASTCONTEXT_BASE_URL`,
-  `FASTCONTEXT_MODEL`, and `FASTCONTEXT_API_KEY`.
-- Optional project file: `.repo-context.toml`.
-
-Copy `.repo-context.toml.example` or set the environment variables in
-`.env.example`. `FASTCONTEXT_BASE_URL` and `FASTCONTEXT_MODEL` are required for
-real exploration runs.
+```json
+{
+  "mcpServers": {
+    "repo-context": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/repo-context",
+        "--extra",
+        "mcp",
+        "repo-context",
+        "mcp",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "FASTCONTEXT_BASE_URL": "http://localhost:8000/v1",
+        "FASTCONTEXT_MODEL": "your-model-name"
+      }
+    }
+  }
+}
+```
 
 ## Validate
 
