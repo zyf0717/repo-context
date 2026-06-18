@@ -30,7 +30,7 @@ class PromptCase:
 class MixedPromptCase:
     name: str
     query: str
-    expected_mode: Literal["fast", "fallback"]
+    expected_mode: Literal["fast", "model_loop"]
     expected_text: str | None = None
     expected_path: str | None = None
     allow_no_citations: bool = False
@@ -139,39 +139,39 @@ MIXED_EDGE_CASES = (
         expected_text="class TrajectoryRecorder",
     ),
     MixedPromptCase(
-        name="semantic symbol fallback",
+        name="semantic symbol model loop",
         query=(
             "How does `_execute_tool_calls_parallel` preserve observation order? "
             "Return citations only."
         ),
-        expected_mode="fallback",
+        expected_mode="model_loop",
         expected_path="src/repo_context/agent.py",
         expected_text="def _execute_tool_calls_parallel",
         allow_no_citations=True,
     ),
     MixedPromptCase(
-        name="pathless assignment fallback",
+        name="pathless assignment model loop",
         query="Find `FASTCONTEXT_MAX_PARALLEL_TOOLS`. Return citations only.",
-        expected_mode="fallback",
+        expected_mode="model_loop",
     ),
     MixedPromptCase(
-        name="ambiguous definition fallback",
+        name="ambiguous definition model loop",
         query="Find `_mock_transport`. Return citations only.",
-        expected_mode="fallback",
+        expected_mode="model_loop",
     ),
     MixedPromptCase(
-        name="missing explicit file target fallback",
+        name="missing explicit file target model loop",
         query=(
             "In src/repo_context/agent.py, find `definitely_missing_symbol`. "
             "Return citations only."
         ),
-        expected_mode="fallback",
+        expected_mode="model_loop",
         allow_no_citations=True,
     ),
     MixedPromptCase(
-        name="invalid explicit citation fallback",
+        name="invalid explicit citation model loop",
         query="Return src/repo_context/agent.py:999999-1000000 citations only.",
-        expected_mode="fallback",
+        expected_mode="model_loop",
         allow_no_citations=True,
     ),
 )

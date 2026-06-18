@@ -100,7 +100,7 @@ def test_pathless_unique_definition_fast_path_skips_endpoint(
     assert result.answer == "src/agent.py:1"
 
 
-def test_pathless_assignment_match_falls_back_to_model_loop(
+def test_pathless_assignment_match_uses_model_loop(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -124,7 +124,7 @@ def test_pathless_assignment_match_falls_back_to_model_loop(
     assert len(seen_payloads) == 1
 
 
-def test_multiple_pathless_definitions_fall_back_to_model_loop(
+def test_multiple_pathless_definitions_use_model_loop(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -180,7 +180,7 @@ def test_pathless_definition_in_markdown_does_not_fast_path(
     assert len(seen_payloads) == 1
 
 
-def test_semantic_query_with_exact_symbol_falls_back_to_model_loop(
+def test_semantic_query_with_exact_symbol_uses_model_loop(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -228,7 +228,7 @@ def test_denied_explicit_path_does_not_fast_path_or_leak_content(
     assert "SECRET=1" not in json.dumps(seen_payloads)
 
 
-def test_fallback_without_endpoint_still_requires_endpoint(
+def test_model_loop_without_endpoint_still_requires_endpoint(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"

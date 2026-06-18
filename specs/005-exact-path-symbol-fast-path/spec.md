@@ -16,7 +16,7 @@ with `turns_used=0`. They do not require endpoint configuration and must not
 include explanations, prose, model-authored rationale, or semantic summaries.
 
 Anything requiring interpretation, synthesis, comparison, semantic judgment, or
-unclear confidence falls back to the existing FastContext loop unchanged.
+unclear confidence continues into the existing FastContext model loop unchanged.
 
 ## Requirements
 
@@ -32,7 +32,7 @@ unclear confidence falls back to the existing FastContext loop unchanged.
   - symlink escape rejection;
   - read byte caps;
   - no denied file content leakage.
-- Preserve the existing FastContext-compatible model loop for all fallback
+- Preserve the existing FastContext-compatible model loop for all non-fast-path
   cases.
 
 ## Fast-Path Cases
@@ -80,7 +80,7 @@ If the query contains an exact symbol but no explicit path:
   exists across the repository;
 - pathless assignment/config-style matches do not short-circuit in v1;
 - if multiple files match, multiple definition patterns match, limits are
-  exceeded, or confidence is otherwise unclear, fall back to the model loop.
+  exceeded, or confidence is otherwise unclear, continue into the model loop.
 
 High-confidence pathless definition patterns for v1:
 
@@ -90,9 +90,9 @@ async def SYMBOL
 class SYMBOL
 ```
 
-## Fallback Rules
+## Model Loop Routing
 
-Fall back to the model loop when:
+Continue into the normal model loop when:
 
 - no exact match exists;
 - a path is missing, denied, unsafe, or ambiguous;
@@ -103,8 +103,8 @@ Fall back to the model loop when:
   ownership, architecture, "why", or "how";
 - confidence is unclear.
 
-Fallback must preserve current endpoint error behavior. Endpoint configuration
-is optional only when the exact fast path succeeds.
+Model-loop routing must preserve current endpoint error behavior. Endpoint
+configuration is optional only when the exact fast path succeeds.
 
 ## Implementation Notes
 
@@ -125,7 +125,7 @@ The helper should:
 - use the existing `Citation`, `ExploreResult`, `PathSafety`, and `read_file`
   paths where possible;
 - avoid adding public request/result fields;
-- return `None` for all fallback cases;
+- return `None` for all cases that should continue into the model loop;
 - return an `ExploreResult` only for validated exact evidence;
 - use `turns_used=0` for success;
 - keep warnings empty unless an existing stable warning is clearly applicable.
@@ -149,12 +149,12 @@ Regression tests cover:
 - explicit path plus symbol returns matching lines in that file;
 - explicit path plus assignment/config token may short-circuit;
 - pathless unique `def`/`async def`/`class` short-circuits;
-- pathless assignment/config token falls back;
-- multiple definition matches fall back;
-- semantic wording with an exact token falls back;
+- pathless assignment/config token continues into the model loop;
+- multiple definition matches continue into the model loop;
+- semantic wording with an exact token continues into the model loop;
 - denied or traversal paths do not leak content and do not short-circuit;
 - endpoint config missing is allowed for fast-path success but still errors for
-  fallback queries;
+  queries that continue into the model loop;
 - CLI text output is normalized for fast-path success;
 - JSON output reports `turns_used=0`.
 

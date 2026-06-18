@@ -73,7 +73,7 @@ Exit criteria:
 - Mocked parallel tool-call tests preserve transcript order and prove repeated
   calls stop before scheduling tool work.
 - Fast-path tests prove exact evidence can return `turns_used=0` without
-  endpoint access and ambiguous or semantic queries still fall back.
+  endpoint access and ambiguous or semantic queries still use the model loop.
 
 ## 4. CLI MVP
 
