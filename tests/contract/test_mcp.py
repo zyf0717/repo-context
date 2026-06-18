@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from repo_context import mcp_server
+from repo_context.agent import explore
 from repo_context.config import Settings
+from repo_context.llm import ChatClient
 from repo_context.mcp_server import explore_repository_handler
 from repo_context.types import Citation, ExploreRequest, ExploreResult
 
@@ -61,6 +64,57 @@ def test_mcp_handler_returns_structured_error_for_invalid_root(tmp_path: Path) -
     assert result["error"]["code"] == "REPO_NOT_FOUND"  # type: ignore[index]
 
 
+def test_mcp_handler_returns_core_normalized_citation_result(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / "src" / "api").mkdir(parents=True)
+    (repo / "src" / "api" / "validation.py").write_text(
+        "def validate_request(payload):\n    return bool(payload)\n",
+        encoding="utf-8",
+    )
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": (
+                                "Here is the answer:\n"
+                                "src/api/validation.py:1-2\n"
+                                "Validation entrypoint."
+                            ),
+                        }
+                    }
+                ]
+            }
+        ]
+    )
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses))
+
+    def core(request: ExploreRequest, core_settings: Settings) -> ExploreResult:
+        return explore(request, core_settings, client=client)
+
+    result = explore_repository_handler(
+        query="Find validation",
+        repo_root=str(repo),
+        settings=settings,
+        core=core,
+    )
+
+    assert result["answer"] == "src/api/validation.py:1-2"
+    assert result["citations"] == [
+        {
+            "path": "src/api/validation.py",
+            "start_line": 1,
+            "end_line": 2,
+            "reason": None,
+        }
+    ]
+
+
 def test_mcp_server_registers_explore_repository(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -86,3 +140,11 @@ def test_mcp_server_registers_explore_repository(
 
     assert server.name == "repo-context"
     assert "explore_repository" in server.tools
+
+
+def _mock_transport(responses: Iterator[dict[str, object]]) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        _ = request
+        return httpx.Response(200, json=next(responses))
+
+    return httpx.MockTransport(handler)

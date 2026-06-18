@@ -11,12 +11,17 @@ same core, not the primary abstraction.
 This repository has the initial Python 3.13+ implementation for spec `001`:
 CLI, shared exploration core, read-only repository tools, OpenAI-compatible
 chat-completions client, optional trajectory logging, and a thin MCP adapter.
+It also includes spec `002` hardening for deterministic controller-owned
+finalization and citation-mode rendering, plus spec `003` latency controls for
+bounded endpoint prompt growth.
 
 Primary planning artifacts:
 
 - [Spec Kit feature spec](specs/001-repo-context-explorer/spec.md)
 - [Implementation plan](specs/001-repo-context-explorer/plan.md)
 - [Task breakdown](specs/001-repo-context-explorer/tasks.md)
+- [Deterministic explorer harness](specs/002-deterministic-explorer-harness/spec.md)
+- [Latency-bounded explorer harness](specs/003-latency-bounded-explorer-harness/spec.md)
 - [Implementation order](docs/implementation-order.md)
 
 ## Usage
@@ -49,6 +54,10 @@ FASTCONTEXT_BASE_URL=http://localhost:8000/v1
 FASTCONTEXT_MODEL=your-model-name
 ```
 
+Endpoint requests use a 120 second default timeout. The harness also caps
+model-observation payloads, model-requested read spans, completion tokens, and
+temperature to reduce latency variance.
+
 Configuration precedence:
 
 ```text
@@ -66,6 +75,12 @@ uv run repo-context explore \
   --max-turns 6 \
   --citation
 ```
+
+In citation mode, `repo-context` validates and normalizes citations in the
+controller. Text output is only repository-relative `path:start-end` labels, or
+`NO_CITATIONS_FOUND`; model prose is not emitted. The model is prompted to use a
+FastContext-style `<final_answer>` block, but the public text output is rendered
+from controller-validated citations.
 
 JSON output:
 
@@ -125,6 +140,15 @@ Generic MCP client config shape:
 uv run pytest
 uv run ruff check .
 uv run mypy
+```
+
+Endpoint-backed e2e tests are opt-in and use this repository as the target repo:
+
+```bash
+REPO_CONTEXT_RUN_E2E=1 \
+FASTCONTEXT_BASE_URL=http://localhost:8000/v1 \
+FASTCONTEXT_MODEL=your-model-name \
+uv run pytest tests/e2e
 ```
 
 ## Scope

@@ -39,14 +39,22 @@ Exit criteria:
 
 ## 3. OpenAI-compatible exploration loop
 
-Implement the FastContext-style harness around the local tools.
+Implement the FastContext-style harness around the local tools. Spec
+`002-deterministic-explorer-harness` hardens this phase with controller-owned
+finalization and citation validation. Spec `003-latency-bounded-explorer-harness`
+adds endpoint latency controls and bounded model observations.
 
 - Send the user query, tool schemas, and bounded observations to the configured
   OpenAI-compatible chat completion endpoint.
 - Execute only allowed read-only tool-call intents.
-- Stop on final answer or max turns.
+- Validate citation content before continuing with trailing tool calls.
+- Stop on valid controller-verified citations, repeated tool-call loops, final
+  answer, or max turns.
 - Persist optional trajectory logs under `FASTCONTEXT_TRAJ_DIR`.
-- Normalize final output to concise citations by default.
+- Normalize citation-mode output to concise controller-rendered citations by
+  default.
+- Bound prompt growth with observation caps, read-line caps, completion-token
+  limits, and deterministic early finalization from narrow evidence.
 
 Exit criteria:
 

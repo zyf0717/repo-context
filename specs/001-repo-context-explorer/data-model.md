@@ -19,6 +19,13 @@ Fields:
 - `max_grep_results: int`: Grep hit cap; default `50`.
 - `traj_dir: Path | None`: Optional run log directory.
 - `ignore: list[str]`: Directory/file patterns to exclude.
+- `timeout_seconds: float`: Endpoint request timeout; default `120`.
+- `max_observation_chars: int`: Max content chars sent back to the model in a
+  tool observation; default `6000`.
+- `max_read_lines: int`: Max lines returned to the model for a model-requested
+  `read_file`; default `120`.
+- `max_completion_tokens: int`: Endpoint completion cap; default `512`.
+- `temperature: float`: Endpoint sampling temperature; default `0`.
 
 Primary env vars:
 
@@ -29,6 +36,11 @@ Primary env vars:
 - `FASTCONTEXT_MAX_READ_BYTES`
 - `FASTCONTEXT_MAX_GREP_RESULTS`
 - `FASTCONTEXT_TRAJ_DIR`
+- `FASTCONTEXT_TIMEOUT_SECONDS`
+- `FASTCONTEXT_MAX_OBSERVATION_CHARS`
+- `FASTCONTEXT_MAX_READ_LINES`
+- `FASTCONTEXT_MAX_COMPLETION_TOKENS`
+- `FASTCONTEXT_TEMPERATURE`
 
 ## ExploreRequest
 
@@ -83,6 +95,8 @@ Rules:
 - Paths are repository-relative.
 - Content is omitted for denied paths.
 - Truncation is explicit.
+- Model-facing observations may be smaller than the local read result when
+  latency caps apply.
 
 ## SearchHit
 

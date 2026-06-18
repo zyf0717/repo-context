@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -21,6 +22,8 @@ from repo_context.types import (
 ToolName = Literal["read_file", "repo_glob", "repo_grep"]
 
 ALLOWED_TOOLS: set[ToolName] = {"read_file", "repo_glob", "repo_grep"}
+MAX_FINAL_CITATIONS = 5
+NO_CITATIONS_FOUND = "NO_CITATIONS_FOUND"
 CITATION_RE = re.compile(
     r"(?P<path>(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+)"
     r":(?P<start>[1-9][0-9]*)(?:-(?P<end>[1-9][0-9]*))?"
@@ -51,6 +54,14 @@ MARKDOWN_FILE_LINES_RE = re.compile(
 )
 
 
+@dataclass(slots=True)
+class EvidenceState:
+    reads: list[ToolObservation] = field(default_factory=list)
+    citations: list[Citation] = field(default_factory=list)
+    seen_tool_calls: set[str] = field(default_factory=set)
+    repeated_tool_calls: int = 0
+
+
 def explore(
     request: ExploreRequest,
     settings: Settings,
@@ -70,12 +81,12 @@ def explore(
         max_results=settings.max_grep_results,
         ignore=settings.ignore,
     )
-    messages = _initial_messages(request, file_sample)
+    messages = _initial_messages(request, file_sample, settings)
     tools = tool_schemas()
     truncated = False
     warnings: list[str] = []
     last_content = ""
-    read_observations: list[ToolObservation] = []
+    evidence = EvidenceState()
 
     try:
         for turn in range(1, effective_max_turns + 1):
@@ -85,16 +96,44 @@ def explore(
             content_text = str(message.get("content") or "").strip()
             if content_text:
                 last_content = content_text
+                citations = _validated_citations_from_content(
+                    content_text,
+                    repo_root=repo_root,
+                    settings=settings,
+                    evidence=evidence,
+                    warnings=warnings,
+                )
+                if citations:
+                    evidence.citations = citations
+                    if _message_has_tool_calls(message):
+                        _append_warning_once(
+                            warnings,
+                            "ignored trailing tool calls after valid citations",
+                        )
+                    result = _finalize_result(
+                        request=request,
+                        repo_root=repo_root,
+                        answer=content_text,
+                        citations=citations,
+                        turns_used=turn,
+                        truncated=truncated,
+                        warnings=warnings,
+                    )
+                    recorder.finish(result=result)
+                    return result
+
             tool_calls = _extract_tool_calls(message)
             if not tool_calls:
-                answer = content_text
-                citations = extract_citations(answer)
-                if request.citation and not citations:
-                    warnings.append("final answer did not include parseable citations")
-                result = ExploreResult(
-                    query=request.query,
-                    repo_root=str(repo_root),
-                    answer=answer,
+                citations = _best_current_citations(evidence)
+                if request.citation and content_text != NO_CITATIONS_FOUND:
+                    _append_warning_once(
+                        warnings,
+                        "final answer did not include valid citations",
+                    )
+                result = _finalize_result(
+                    request=request,
+                    repo_root=repo_root,
+                    answer=content_text,
                     citations=citations,
                     turns_used=turn,
                     truncated=truncated,
@@ -102,6 +141,50 @@ def explore(
                 )
                 recorder.finish(result=result)
                 return result
+
+            if _should_finalize_before_tool_calls(
+                request,
+                evidence,
+                tool_calls,
+                settings,
+            ):
+                _append_warning_once(
+                    warnings,
+                    "sufficient narrow evidence stopped broad read",
+                )
+                result = _finalize_result(
+                    request=request,
+                    repo_root=repo_root,
+                    answer=last_content,
+                    citations=_best_current_citations(evidence),
+                    turns_used=turn,
+                    truncated=truncated,
+                    warnings=warnings,
+                )
+                recorder.finish(result=result)
+                return result
+
+            repeated_call = _first_repeated_tool_call(evidence, tool_calls)
+            if repeated_call is not None:
+                evidence.repeated_tool_calls += 1
+                _append_warning_once(
+                    warnings,
+                    "repeated tool call stopped exploration",
+                )
+                citations = _best_current_citations(evidence)
+                result = _finalize_result(
+                    request=request,
+                    repo_root=repo_root,
+                    answer=last_content,
+                    citations=citations,
+                    turns_used=turn,
+                    truncated=truncated,
+                    warnings=warnings,
+                )
+                recorder.finish(result=result)
+                return result
+            for tool_call in tool_calls:
+                evidence.seen_tool_calls.add(_tool_call_fingerprint(tool_call))
 
             messages.append(_assistant_tool_message(message))
             for tool_call in tool_calls:
@@ -112,8 +195,13 @@ def explore(
                 )
                 observation.tool_call_id = tool_call.id
                 truncated = truncated or observation.truncated
-                if observation.ok and observation.path and observation.line_range:
-                    read_observations.append(observation)
+                if (
+                    tool_call.name == "read_file"
+                    and observation.ok
+                    and observation.path
+                    and observation.line_range
+                ):
+                    evidence.reads.append(observation)
                 recorder.record_observation(turn, tool_call.name, observation)
                 messages.append(
                     {
@@ -121,21 +209,34 @@ def explore(
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
                         "content": json.dumps(
-                            _model_observation_payload(observation),
+                            _model_observation_payload(
+                                observation,
+                                max_chars=settings.max_observation_chars,
+                            ),
                             sort_keys=True,
                         ),
                     }
                 )
         if last_content:
-            citations = extract_citations(last_content) or _citations_from_observations(
-                last_content, read_observations
+            citations = _validated_citations_from_content(
+                last_content,
+                repo_root=repo_root,
+                settings=settings,
+                evidence=evidence,
+                warnings=warnings,
+            ) or _citations_from_observations(
+                last_content,
+                evidence.reads,
             )
-            warnings.append("max turns exceeded after partial answer")
+            _append_warning_once(warnings, "max turns exceeded after partial answer")
             if request.citation and not citations:
-                warnings.append("partial answer did not include parseable citations")
-            result = ExploreResult(
-                query=request.query,
-                repo_root=str(repo_root),
+                _append_warning_once(
+                    warnings,
+                    "partial answer did not include valid citations",
+                )
+            result = _finalize_result(
+                request=request,
+                repo_root=repo_root,
                 answer=last_content,
                 citations=citations,
                 turns_used=effective_max_turns,
@@ -144,12 +245,19 @@ def explore(
             )
             recorder.finish(result=result)
             return result
-        error = ExplorerError(
-            "MAX_TURNS_EXCEEDED",
-            "Exploration exceeded the configured maximum turns",
-            details={"max_turns": effective_max_turns},
+        citations = _best_current_citations(evidence)
+        _append_warning_once(warnings, "max turns exceeded without final answer")
+        result = _finalize_result(
+            request=request,
+            repo_root=repo_root,
+            answer="",
+            citations=citations,
+            turns_used=effective_max_turns,
+            truncated=truncated,
+            warnings=warnings,
         )
-        raise error
+        recorder.finish(result=result)
+        return result
     except ExplorerError as exc:
         recorder.finish(error=exc)
         raise
@@ -233,17 +341,313 @@ def tool_schemas() -> list[dict[str, Any]]:
 
 
 def format_text_result(result: ExploreResult, *, citation: bool) -> str:
-    if not citation or not result.citations:
-        return result.answer
-    citation_lines = [citation_item.label() for citation_item in result.citations]
-    answer_lines = [
-        line.strip()
-        for line in result.answer.splitlines()
-        if line.strip() and line.strip() not in citation_lines
-    ]
-    if not answer_lines:
-        return "\n".join(citation_lines)
-    return "\n".join([*citation_lines, "", *answer_lines])
+    if citation:
+        return _citation_text(result.citations)
+    return result.answer
+
+
+def _finalize_result(
+    *,
+    request: ExploreRequest,
+    repo_root: Path,
+    answer: str,
+    citations: list[Citation],
+    turns_used: int,
+    truncated: bool,
+    warnings: list[str],
+) -> ExploreResult:
+    if request.citation or (not answer and citations):
+        answer = _citation_text(citations)
+    return ExploreResult(
+        query=request.query,
+        repo_root=str(repo_root),
+        answer=answer,
+        citations=citations,
+        turns_used=turns_used,
+        truncated=truncated,
+        warnings=warnings,
+    )
+
+
+def _citation_text(citations: list[Citation]) -> str:
+    if not citations:
+        return NO_CITATIONS_FOUND
+    return "\n".join(citation.label() for citation in citations)
+
+
+def _validated_citations_from_content(
+    content: str,
+    *,
+    repo_root: Path,
+    settings: Settings,
+    evidence: EvidenceState,
+    warnings: list[str],
+) -> list[Citation]:
+    parsed = extract_citations(content)
+    if not parsed:
+        return []
+    validated = _validate_citations(
+        parsed,
+        repo_root=repo_root,
+        settings=settings,
+        evidence=evidence,
+    )
+    if not validated:
+        _append_warning_once(warnings, "invalid citation rejected")
+    return validated
+
+
+def _validate_citations(
+    citations: list[Citation],
+    *,
+    repo_root: Path,
+    settings: Settings,
+    evidence: EvidenceState,
+) -> list[Citation]:
+    validated: list[Citation] = []
+    for citation in citations:
+        normalized = _normalize_citation(citation)
+        if normalized is None:
+            continue
+        if _citation_has_read_coverage(normalized, evidence.reads):
+            validated.append(normalized)
+            continue
+        verified = _verify_citation_by_read(
+            normalized,
+            repo_root=repo_root,
+            settings=settings,
+            evidence=evidence,
+        )
+        if verified is not None:
+            validated.append(verified)
+    return _dedupe_citations(validated)[:MAX_FINAL_CITATIONS]
+
+
+def _normalize_citation(citation: Citation) -> Citation | None:
+    if (
+        not citation.path
+        or citation.start_line is None
+        or citation.end_line is None
+        or citation.start_line <= 0
+        or citation.end_line <= 0
+        or citation.end_line < citation.start_line
+        or not _is_repository_relative_path(citation.path)
+    ):
+        return None
+    return Citation(
+        path=citation.path,
+        start_line=citation.start_line,
+        end_line=citation.end_line,
+        reason=citation.reason,
+    )
+
+
+def _is_repository_relative_path(path: str) -> bool:
+    raw = Path(path)
+    return not raw.is_absolute() and ".." not in raw.parts
+
+
+def _citation_has_read_coverage(
+    citation: Citation,
+    observations: list[ToolObservation],
+) -> bool:
+    for observation in observations:
+        if not _citation_overlaps_read(citation, observation):
+            continue
+        read_start, read_end = _parse_line_range(observation.line_range or "")
+        if (
+            read_start is not None
+            and read_end is not None
+            and citation.start_line is not None
+            and citation.end_line is not None
+            and read_start <= citation.start_line
+            and read_end >= citation.end_line
+        ):
+            return True
+    return False
+
+
+def _citation_overlaps_read(
+    citation: Citation,
+    observation: ToolObservation,
+) -> bool:
+    if (
+        observation.path != citation.path
+        or observation.line_range is None
+        or citation.start_line is None
+        or citation.end_line is None
+    ):
+        return False
+    read_start, read_end = _parse_line_range(observation.line_range)
+    if read_start is None or read_end is None:
+        return False
+    return citation.start_line <= read_end and citation.end_line >= read_start
+
+
+def _verify_citation_by_read(
+    citation: Citation,
+    *,
+    repo_root: Path,
+    settings: Settings,
+    evidence: EvidenceState,
+) -> Citation | None:
+    if citation.start_line is None or citation.end_line is None:
+        return None
+    try:
+        observation = read_file(
+            repo_root=repo_root,
+            path=citation.path,
+            start_line=citation.start_line,
+            end_line=citation.end_line,
+            max_bytes=settings.max_read_bytes,
+            ignore=settings.ignore,
+        )
+    except ExplorerError:
+        return None
+    verified = Citation(
+        path=observation.path or citation.path,
+        start_line=citation.start_line,
+        end_line=citation.end_line,
+        reason=citation.reason,
+    )
+    if verified.path != citation.path:
+        return None
+    if not _citation_has_read_coverage(verified, [observation]):
+        return None
+    evidence.reads.append(observation)
+    return verified
+
+
+def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
+    deduped: list[Citation] = []
+    seen: set[tuple[str, int | None, int | None]] = set()
+    for citation in citations:
+        key = (citation.path, citation.start_line, citation.end_line)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(citation)
+    return deduped
+
+
+def _best_current_citations(evidence: EvidenceState) -> list[Citation]:
+    if evidence.citations:
+        return evidence.citations[:MAX_FINAL_CITATIONS]
+    return _citations_from_reads(evidence.reads)
+
+
+def _citations_from_reads(observations: list[ToolObservation]) -> list[Citation]:
+    candidates: list[tuple[bool, int, int, Citation]] = []
+    seen: set[tuple[str, int | None, int | None]] = set()
+    for index, observation in enumerate(observations):
+        if observation.path is None or observation.line_range is None:
+            continue
+        start, end = _parse_line_range(observation.line_range)
+        if start is None or end is None:
+            continue
+        key = (observation.path, start, end)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(
+            (
+                observation.truncated,
+                end - start,
+                index,
+                Citation(observation.path, start, end),
+            )
+        )
+    return [
+        citation
+        for _, _, _, citation in sorted(candidates, key=lambda candidate: candidate[:3])
+    ][:MAX_FINAL_CITATIONS]
+
+
+def _should_finalize_before_tool_calls(
+    request: ExploreRequest,
+    evidence: EvidenceState,
+    tool_calls: list[ToolCall],
+    settings: Settings,
+) -> bool:
+    if not request.citation or _best_narrow_read_citation(evidence, settings) is None:
+        return False
+    return any(
+        _is_broad_read_on_seen_path(tool_call, evidence, settings)
+        for tool_call in tool_calls
+    )
+
+
+def _best_narrow_read_citation(
+    evidence: EvidenceState,
+    settings: Settings,
+) -> Citation | None:
+    for citation in _citations_from_reads(evidence.reads):
+        for observation in evidence.reads:
+            start, end = _parse_line_range(observation.line_range or "")
+            if (
+                observation.path == citation.path
+                and not observation.truncated
+                and citation.start_line is not None
+                and citation.end_line is not None
+                and start == citation.start_line
+                and end == citation.end_line
+                and citation.end_line - citation.start_line + 1
+                <= settings.max_read_lines
+            ):
+                return citation
+    return None
+
+
+def _is_broad_read_on_seen_path(
+    tool_call: ToolCall,
+    evidence: EvidenceState,
+    settings: Settings,
+) -> bool:
+    if tool_call.name != "read_file":
+        return False
+    path = tool_call.arguments.get("path")
+    if not isinstance(path, str) or not path:
+        return False
+    read_paths = {
+        observation.path for observation in evidence.reads if observation.path
+    }
+    if path not in read_paths:
+        return False
+    start_line = _int_argument(tool_call.arguments, "start_line")
+    end_line = _int_argument(tool_call.arguments, "end_line")
+    if start_line is None or end_line is None:
+        return True
+    return end_line - start_line + 1 > settings.max_read_lines
+
+
+def _tool_call_fingerprint(tool_call: ToolCall) -> str:
+    return json.dumps(
+        {
+            "name": tool_call.name,
+            "arguments": tool_call.arguments,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _first_repeated_tool_call(
+    evidence: EvidenceState,
+    tool_calls: list[ToolCall],
+) -> ToolCall | None:
+    for tool_call in tool_calls:
+        if _tool_call_fingerprint(tool_call) in evidence.seen_tool_calls:
+            return tool_call
+    return None
+
+
+def _message_has_tool_calls(message: dict[str, Any]) -> bool:
+    return bool(message.get("tool_calls"))
+
+
+def _append_warning_once(warnings: list[str], warning: str) -> None:
+    if warning not in warnings:
+        warnings.append(warning)
 
 
 def extract_citations(answer: str) -> list[Citation]:
@@ -266,11 +670,11 @@ def extract_citations(answer: str) -> list[Citation]:
 
 
 def _citation_from_match(match: re.Match[str]) -> Citation:
-        path = match.group("path")
-        start = int(match.group("start"))
-        end_text = match.group("end")
-        end = int(end_text) if end_text is not None else start
-        return Citation(path=path, start_line=start, end_line=end)
+    path = match.group("path")
+    start = int(match.group("start"))
+    end_text = match.group("end")
+    end = int(end_text) if end_text is not None else start
+    return Citation(path=path, start_line=start, end_line=end)
 
 
 def _citations_from_observations(
@@ -282,7 +686,10 @@ def _citations_from_observations(
     for observation in observations:
         if observation.path is None or observation.line_range is None:
             continue
-        if observation.path not in answer and Path(observation.path).name not in answer:
+        if (
+            observation.path not in answer
+            and Path(observation.path).name not in answer
+        ):
             continue
         start, end = _parse_line_range(observation.line_range)
         key = (observation.path, start, end)
@@ -290,7 +697,7 @@ def _citations_from_observations(
             continue
         seen.add(key)
         citations.append(Citation(observation.path, start, end))
-    return citations[:5]
+    return citations[:MAX_FINAL_CITATIONS]
 
 
 def _parse_line_range(line_range: str) -> tuple[int | None, int | None]:
@@ -311,6 +718,7 @@ def _parse_line_range(line_range: str) -> tuple[int | None, int | None]:
 def _initial_messages(
     request: ExploreRequest,
     file_sample: ToolObservation,
+    settings: Settings,
 ) -> list[dict[str, Any]]:
     files = "\n".join(f"- {path}" for path in file_sample.matches)
     if not files:
@@ -321,10 +729,11 @@ def _initial_messages(
         else ""
     )
     output_contract = (
-        "Final answer format is strict: return only 1-5 lines of "
-        "path:start-end citations. Do not include prose, Markdown, code "
-        "blocks, bullets, or explanations. If no citation is supported, "
-        "return exactly NO_CITATIONS_FOUND."
+        "Final answer format is strict: end with a <final_answer> block "
+        "containing only 1-5 repository-relative path:start-end citation "
+        "lines, then </final_answer>. Do not include prose, Markdown, code "
+        "blocks, bullets, or explanations inside the block. If no citation "
+        "is supported, return exactly NO_CITATIONS_FOUND."
         if request.citation
         else "Final answer may include concise prose with file-line citations."
     )
@@ -343,6 +752,10 @@ def _initial_messages(
                 "If a read returns PATH_NOT_FOUND, INVALID_TOOL_ARGUMENTS, or "
                 "PATH_OUTSIDE_ROOT, correct the path once using the known file "
                 "list or broaden search; do not repeat the same failing call. "
+                "For exact symbol, function, or class names, use repo_grep "
+                "before reading broad file ranges. "
+                f"Use read_file line ranges of at most {settings.max_read_lines} "
+                "lines unless no narrower range is known. "
                 f"{output_contract}"
             ),
         },
@@ -359,7 +772,10 @@ def _initial_messages(
 def _extract_message(response: dict[str, Any]) -> dict[str, Any]:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices:
-        raise ExplorerError("ENDPOINT_BAD_RESPONSE", "Endpoint response has no choices")
+        raise ExplorerError(
+            "ENDPOINT_BAD_RESPONSE",
+            "Endpoint response has no choices",
+        )
     first = choices[0]
     if not isinstance(first, dict):
         raise ExplorerError(
@@ -391,7 +807,10 @@ def _parse_tool_call(raw_call: object) -> ToolCall:
     call_id = raw_call.get("id")
     function = raw_call.get("function")
     if not isinstance(call_id, str) or not isinstance(function, dict):
-        raise ExplorerError("ENDPOINT_BAD_RESPONSE", "tool call is missing id/function")
+        raise ExplorerError(
+            "ENDPOINT_BAD_RESPONSE",
+            "tool call is missing id/function",
+        )
     name = function.get("name")
     if not isinstance(name, str) or name not in ALLOWED_TOOLS:
         raise ExplorerError(
@@ -401,7 +820,10 @@ def _parse_tool_call(raw_call: object) -> ToolCall:
         )
     raw_arguments = function.get("arguments", "{}")
     if not isinstance(raw_arguments, str):
-        raise ExplorerError("ENDPOINT_BAD_RESPONSE", "tool arguments must be JSON text")
+        raise ExplorerError(
+            "ENDPOINT_BAD_RESPONSE",
+            "tool arguments must be JSON text",
+        )
     try:
         arguments = json.loads(raw_arguments)
     except json.JSONDecodeError as exc:
@@ -410,7 +832,10 @@ def _parse_tool_call(raw_call: object) -> ToolCall:
             "tool arguments must be valid JSON",
         ) from exc
     if not isinstance(arguments, dict):
-        raise ExplorerError("ENDPOINT_BAD_RESPONSE", "tool arguments must be an object")
+        raise ExplorerError(
+            "ENDPOINT_BAD_RESPONSE",
+            "tool arguments must be an object",
+        )
     return ToolCall(
         id=call_id,
         name=name,
@@ -426,7 +851,11 @@ def _assistant_tool_message(message: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _model_observation_payload(observation: ToolObservation) -> dict[str, object]:
+def _model_observation_payload(
+    observation: ToolObservation,
+    *,
+    max_chars: int | None = None,
+) -> dict[str, object]:
     payload = observation.to_dict()
     if (
         observation.ok
@@ -437,7 +866,18 @@ def _model_observation_payload(observation: ToolObservation) -> dict[str, object
             observation.content,
             observation.line_range,
         )
+    if max_chars is not None:
+        _cap_payload_content(payload, max_chars)
     return payload
+
+
+def _cap_payload_content(payload: dict[str, object], max_chars: int) -> None:
+    content = payload.get("content")
+    if not isinstance(content, str) or len(content) <= max_chars:
+        return
+    payload["content"] = content[:max_chars]
+    payload["content_truncated_by_chars"] = True
+    payload["truncated"] = True
 
 
 def _with_line_numbers(content: str, line_range: str) -> str:
@@ -459,14 +899,21 @@ def _execute_tool_call(
 ) -> ToolObservation:
     try:
         if tool_call.name == "read_file":
-            return read_file(
+            start_line, end_line, clamped = _bounded_read_lines(
+                tool_call.arguments,
+                settings,
+            )
+            observation = read_file(
                 repo_root=repo_root,
                 path=_required_str(tool_call.arguments, "path"),
-                start_line=_optional_int(tool_call.arguments, "start_line"),
-                end_line=_optional_int(tool_call.arguments, "end_line"),
+                start_line=start_line,
+                end_line=end_line,
                 max_bytes=settings.max_read_bytes,
                 ignore=settings.ignore,
             )
+            if clamped:
+                observation.truncated = True
+            return observation
         if tool_call.name == "repo_glob":
             return repo_glob(
                 repo_root=repo_root,
@@ -512,3 +959,26 @@ def _optional_int(arguments: dict[str, object], key: str) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ExplorerError("INVALID_TOOL_ARGUMENTS", f"{key} must be an integer")
     return value
+
+
+def _int_argument(arguments: dict[str, object], key: str) -> int | None:
+    value = arguments.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _bounded_read_lines(
+    arguments: dict[str, object],
+    settings: Settings,
+) -> tuple[int | None, int | None, bool]:
+    start_line = _optional_int(arguments, "start_line")
+    end_line = _optional_int(arguments, "end_line")
+    if start_line is not None and end_line is not None:
+        max_end_line = start_line + settings.max_read_lines - 1
+        if end_line > max_end_line:
+            return start_line, max_end_line, True
+        return start_line, end_line, False
+    if start_line is None:
+        start_line = 1
+    return start_line, start_line + settings.max_read_lines - 1, True

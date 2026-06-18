@@ -38,6 +38,10 @@ def explore_repository_handler(
                 traj_dir=settings.traj_dir,
                 ignore=settings.ignore,
                 timeout_seconds=settings.timeout_seconds,
+                max_observation_chars=settings.max_observation_chars,
+                max_read_lines=settings.max_read_lines,
+                max_completion_tokens=settings.max_completion_tokens,
+                temperature=settings.temperature,
             )
         request = ExploreRequest(
             query=query,

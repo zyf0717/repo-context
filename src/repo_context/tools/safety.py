@@ -57,6 +57,12 @@ class PathSafety:
 
     def resolve_existing_file(self, requested: str | Path) -> Path:
         raw = Path(requested)
+        if ".." in raw.parts:
+            raise ExplorerError(
+                "PATH_OUTSIDE_ROOT",
+                "Requested path is outside the repository root",
+                details={"path": str(requested)},
+            )
         candidate = raw if raw.is_absolute() else self.repo_root / raw
         resolved = candidate.resolve(strict=False)
         if not _is_relative_to(resolved, self.repo_root):
@@ -160,4 +166,3 @@ def _is_relative_to(path: Path, root: Path) -> bool:
     except ValueError:
         return False
     return True
-

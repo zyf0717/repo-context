@@ -39,6 +39,8 @@ class ChatClient:
             "messages": messages,
             "tools": tools,
             "tool_choice": "auto",
+            "max_tokens": self._settings.max_completion_tokens,
+            "temperature": self._settings.temperature,
         }
         try:
             response = self._client.post(url, headers=headers, json=payload)
@@ -83,4 +85,3 @@ def _chat_completions_url(base_url: str) -> str:
     if trimmed.endswith("/chat/completions"):
         return trimmed
     return f"{trimmed}/chat/completions"
-

@@ -34,6 +34,11 @@ export FASTCONTEXT_MAX_TURNS=6
 export FASTCONTEXT_MAX_READ_BYTES=12000
 export FASTCONTEXT_MAX_GREP_RESULTS=50
 export FASTCONTEXT_TRAJ_DIR=.fastcontext
+export FASTCONTEXT_TIMEOUT_SECONDS=120
+export FASTCONTEXT_MAX_OBSERVATION_CHARS=6000
+export FASTCONTEXT_MAX_READ_LINES=120
+export FASTCONTEXT_MAX_COMPLETION_TOKENS=512
+export FASTCONTEXT_TEMPERATURE=0
 ```
 
 Optional project config:
@@ -48,10 +53,15 @@ ignore = [".git", ".venv", "node_modules", "dist", "build"]
 base_url = "http://localhost:8000/v1"
 model = "your-model-name"
 api_key = ""
+timeout_seconds = 120
+max_completion_tokens = 512
+temperature = 0
 
 [tools]
 max_read_bytes = 12000
 max_grep_results = 50
+max_observation_chars = 6000
+max_read_lines = 120
 ```
 
 The repository includes `.repo-context.toml.example` with this shape.

@@ -32,6 +32,9 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["tests/fixtures"]
+markers = [
+  "e2e: endpoint-backed opt-in end-to-end tests",
+]
 
 [tool.ruff]
 line-length = 88

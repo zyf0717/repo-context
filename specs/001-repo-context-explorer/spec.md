@@ -100,7 +100,7 @@ Acceptance Scenarios:
 - Query is empty or only whitespace.
 - Repository path does not exist or is not a directory.
 - Endpoint times out, returns invalid JSON, or requests an unsupported tool.
-- Model repeatedly calls tools until `max_turns` is reached.
+- Model repeats identical tool calls before producing a valid final answer.
 - File contains binary or invalid text content.
 - Grep pattern is invalid for the selected search implementation.
 - Final answer has no citations.
@@ -125,8 +125,8 @@ Acceptance Scenarios:
   files or directories.
 - FR-009: The system MUST cap read bytes, grep result counts, and model
   exploration turns.
-- FR-010: The system MUST return repository-relative file paths and line ranges
-  in citation mode.
+- FR-010: The system MUST return controller-validated repository-relative file
+  paths and line ranges in citation mode.
 - FR-011: The system MUST provide an MCP adapter exposing
   `explore_repository(query, repo_root?, max_turns?, citation?)`.
 - FR-012: The MCP adapter MUST delegate to the same exploration core as the CLI.

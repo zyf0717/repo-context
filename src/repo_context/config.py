@@ -19,7 +19,11 @@ class Settings:
     max_grep_results: int = 50
     traj_dir: Path | None = None
     ignore: list[str] = field(default_factory=list)
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 120.0
+    max_observation_chars: int = 6_000
+    max_read_lines: int = 120
+    max_completion_tokens: int = 512
+    temperature: float = 0.0
 
     def require_endpoint(self) -> None:
         if not self.base_url:
@@ -44,6 +48,11 @@ class SettingsOverrides:
     max_grep_results: int | None = None
     traj_dir: Path | None = None
     ignore: list[str] | None = None
+    timeout_seconds: float | None = None
+    max_observation_chars: int | None = None
+    max_read_lines: int | None = None
+    max_completion_tokens: int | None = None
+    temperature: float | None = None
 
 
 def load_settings(
@@ -97,6 +106,26 @@ def _apply_toml(settings: Settings, path: Path) -> Settings:
             tools.get("max_grep_results", settings.max_grep_results),
             "max_grep_results",
         ),
+        timeout_seconds=_float_value(
+            model.get("timeout_seconds", settings.timeout_seconds),
+            "timeout_seconds",
+        ),
+        max_observation_chars=_int_value(
+            tools.get("max_observation_chars", settings.max_observation_chars),
+            "max_observation_chars",
+        ),
+        max_read_lines=_int_value(
+            tools.get("max_read_lines", settings.max_read_lines),
+            "max_read_lines",
+        ),
+        max_completion_tokens=_int_value(
+            model.get("max_completion_tokens", settings.max_completion_tokens),
+            "max_completion_tokens",
+        ),
+        temperature=_float_value(
+            model.get("temperature", settings.temperature),
+            "temperature",
+        ),
         traj_dir=_optional_path(
             explorer.get("traj_dir", settings.traj_dir)
             or data.get("traj_dir")
@@ -120,6 +149,31 @@ def _apply_env(settings: Settings, env: os._Environ[str]) -> Settings:
             env, "FASTCONTEXT_MAX_GREP_RESULTS", settings.max_grep_results
         ),
         traj_dir=_optional_path(env.get("FASTCONTEXT_TRAJ_DIR")) or settings.traj_dir,
+        timeout_seconds=_env_float(
+            env,
+            "FASTCONTEXT_TIMEOUT_SECONDS",
+            settings.timeout_seconds,
+        ),
+        max_observation_chars=_env_int(
+            env,
+            "FASTCONTEXT_MAX_OBSERVATION_CHARS",
+            settings.max_observation_chars,
+        ),
+        max_read_lines=_env_int(
+            env,
+            "FASTCONTEXT_MAX_READ_LINES",
+            settings.max_read_lines,
+        ),
+        max_completion_tokens=_env_int(
+            env,
+            "FASTCONTEXT_MAX_COMPLETION_TOKENS",
+            settings.max_completion_tokens,
+        ),
+        temperature=_env_float(
+            env,
+            "FASTCONTEXT_TEMPERATURE",
+            settings.temperature,
+        ),
     )
 
 
@@ -146,6 +200,21 @@ def _apply_overrides(settings: Settings, overrides: SettingsOverrides) -> Settin
         if overrides.traj_dir is not None
         else settings.traj_dir,
         ignore=overrides.ignore if overrides.ignore is not None else settings.ignore,
+        timeout_seconds=overrides.timeout_seconds
+        if overrides.timeout_seconds is not None
+        else settings.timeout_seconds,
+        max_observation_chars=overrides.max_observation_chars
+        if overrides.max_observation_chars is not None
+        else settings.max_observation_chars,
+        max_read_lines=overrides.max_read_lines
+        if overrides.max_read_lines is not None
+        else settings.max_read_lines,
+        max_completion_tokens=overrides.max_completion_tokens
+        if overrides.max_completion_tokens is not None
+        else settings.max_completion_tokens,
+        temperature=overrides.temperature
+        if overrides.temperature is not None
+        else settings.temperature,
     )
 
 
@@ -154,6 +223,9 @@ def _validate_settings(settings: Settings) -> None:
         "max_turns": settings.max_turns,
         "max_read_bytes": settings.max_read_bytes,
         "max_grep_results": settings.max_grep_results,
+        "max_observation_chars": settings.max_observation_chars,
+        "max_read_lines": settings.max_read_lines,
+        "max_completion_tokens": settings.max_completion_tokens,
     }
     for name, value in int_fields.items():
         if value <= 0:
@@ -162,6 +234,18 @@ def _validate_settings(settings: Settings) -> None:
                 f"{name} must be positive",
                 details={name: value},
             )
+    if settings.timeout_seconds <= 0:
+        raise ExplorerError(
+            "CONFIG_INVALID",
+            "timeout_seconds must be positive",
+            details={"timeout_seconds": settings.timeout_seconds},
+        )
+    if settings.temperature < 0:
+        raise ExplorerError(
+            "CONFIG_INVALID",
+            "temperature must be non-negative",
+            details={"temperature": settings.temperature},
+        )
 
 
 def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -176,6 +260,11 @@ def _env_int(env: os._Environ[str], name: str, default: int) -> int:
     return default if value is None else _int_value(value, name)
 
 
+def _env_float(env: os._Environ[str], name: str, default: float) -> float:
+    value = env.get(name)
+    return default if value is None else _float_value(value, name)
+
+
 def _int_value(value: object, name: str) -> int:
     if isinstance(value, bool):
         raise ExplorerError("CONFIG_INVALID", f"{name} must be an integer")
@@ -187,6 +276,20 @@ def _int_value(value: object, name: str) -> int:
         parsed = int(value)
     except ValueError as exc:
         raise ExplorerError("CONFIG_INVALID", f"{name} must be an integer") from exc
+    return parsed
+
+
+def _float_value(value: object, name: str) -> float:
+    if isinstance(value, bool):
+        raise ExplorerError("CONFIG_INVALID", f"{name} must be a number")
+    if isinstance(value, int | float):
+        return float(value)
+    if not isinstance(value, str):
+        raise ExplorerError("CONFIG_INVALID", f"{name} must be a number")
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ExplorerError("CONFIG_INVALID", f"{name} must be a number") from exc
     return parsed
 
 

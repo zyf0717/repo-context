@@ -45,6 +45,21 @@ def test_read_file_rejects_path_traversal(tmp_path: Path) -> None:
     assert "do-not-read" not in str(exc_info.value.to_dict())
 
 
+def test_read_file_rejects_normalized_path_traversal(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "safe").mkdir(parents=True)
+    (repo / "app.py").write_text("print('ok')\n", encoding="utf-8")
+
+    with pytest.raises(ExplorerError) as exc_info:
+        read_file(
+            repo_root=repo,
+            path="safe/../app.py",
+            max_bytes=100,
+        )
+
+    assert exc_info.value.code == "PATH_OUTSIDE_ROOT"
+
+
 def test_read_file_rejects_symlink_escape(tmp_path: Path) -> None:
     if not hasattr(os, "symlink"):
         pytest.skip("symlink unavailable")

@@ -27,8 +27,16 @@ src/api/validation.py:42-88
 tests/test_validation.py:101-140
 ```
 
-If the model provides explanatory text, citations remain first and explanatory
-text follows.
+If the model provides explanatory text, citation-mode text output still emits
+only controller-validated citations. If no citation is accepted, text output is
+exactly `NO_CITATIONS_FOUND`.
+
+The model is prompted to produce final citations in a `<final_answer>` block,
+but the CLI does not print that block wrapper in citation mode.
+
+Model-facing tool observations are latency bounded. Model-requested reads may
+be returned as bounded previews, but local repository safety and read byte caps
+still apply before any content is observed.
 
 ## JSON Output
 
