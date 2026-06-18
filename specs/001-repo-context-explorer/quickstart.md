@@ -1,7 +1,6 @@
 # Quickstart: Repo Context Explorer
 
-This quickstart describes the intended implementation behavior. It is not
-expected to run until the package exists.
+This quickstart describes the implemented CLI-first behavior for spec `001`.
 
 ## Prerequisites
 
@@ -14,6 +13,7 @@ expected to run until the package exists.
 
 ```bash
 uv sync
+uv run repo-context --help
 ```
 
 ## Configure Endpoint
@@ -45,6 +45,8 @@ max_read_bytes = 12000
 max_grep_results = 50
 ```
 
+The repository includes `.repo-context.toml.example` with this shape.
+
 ## Run CLI Exploration
 
 ```bash
@@ -73,9 +75,13 @@ uv run repo-context explore \
 
 ## Run MCP Adapter
 
-The MCP server is added after CLI/core implementation.
+Install the optional MCP dependency before using the adapter:
 
-Expected server command:
+```bash
+uv sync --extra mcp
+```
+
+Server command:
 
 ```bash
 uv run repo-context mcp --transport stdio
@@ -92,8 +98,8 @@ explore_repository(query, repo_root?, max_turns?, citation?)
 ```bash
 uv run pytest
 uv run ruff check .
-uv run pyright
+uv run mypy
 ```
 
-If `mypy` is selected instead of `pyright`, use the equivalent type-check
-command consistently in CI and docs.
+Errors are printed to stderr as `CODE: message`; denied paths never include file
+contents in the error payload.

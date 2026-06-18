@@ -1,0 +1,47 @@
+[project]
+name = "repo-context"
+version = "0.1.0"
+description = "Read-only repository context explorer for coding agents."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "repo-context maintainers" }]
+dependencies = [
+  "httpx>=0.28.0",
+  "pydantic>=2.10.0",
+  "pydantic-settings>=2.7.0",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.13.0"]
+
+[project.scripts]
+repo-context = "repo_context.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15.0",
+  "pytest>=8.3.0",
+  "ruff>=0.9.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["tests/fixtures"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src/repo_context", "tests/unit", "tests/contract"]
+exclude = ["tests/fixtures"]

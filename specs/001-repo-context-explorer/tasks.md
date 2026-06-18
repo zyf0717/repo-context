@@ -19,26 +19,26 @@ the CLI MVP independently shippable before MCP.
 
 Purpose: Establish Python 3.13+ package and test baseline.
 
-- [ ] T001 Create `pyproject.toml` with `requires-python = ">=3.13"` and `uv`
+- [x] T001 Create `pyproject.toml` with `requires-python = ">=3.13"` and `uv`
   compatible project metadata.
-- [ ] T002 Create `src/repo_context/` package and `tests/` layout.
-- [ ] T003 [P] Add console script target `repo-context`.
-- [ ] T004 [P] Configure `pytest`, `ruff`, and selected type checker.
-- [ ] T005 [P] Add `.env.example` and `.repo-context.toml` example.
+- [x] T002 Create `src/repo_context/` package and `tests/` layout.
+- [x] T003 [P] Add console script target `repo-context`.
+- [x] T004 [P] Configure `pytest`, `ruff`, and selected type checker.
+- [x] T005 [P] Add `.env.example` and `.repo-context.toml` example.
 
 ## Phase 2: Foundational Read-only Tooling
 
 Purpose: Security boundary that blocks all model, CLI, and MCP behavior.
 
-- [ ] T006 [US2] Add path resolution and root enforcement in
+- [x] T006 [US2] Add path resolution and root enforcement in
   `src/repo_context/tools/safety.py`.
-- [ ] T007 [P] [US2] Add denylist pattern handling for `.git`, env files,
+- [x] T007 [P] [US2] Add denylist pattern handling for `.git`, env files,
   secrets, virtualenvs, and build outputs.
-- [ ] T008 [P] [US2] Add unit tests for traversal and symlink escape rejection.
-- [ ] T009 [US2] Implement `read_file` with byte caps and line ranges.
-- [ ] T010 [US2] Implement `repo_glob` with ignore handling.
-- [ ] T011 [US2] Implement `repo_grep` with result caps and line numbers.
-- [ ] T012 [P] [US2] Add unit tests for read caps, grep caps, denylist, and
+- [x] T008 [P] [US2] Add unit tests for traversal and symlink escape rejection.
+- [x] T009 [US2] Implement `read_file` with byte caps and line ranges.
+- [x] T010 [US2] Implement `repo_glob` with ignore handling.
+- [x] T011 [US2] Implement `repo_grep` with result caps and line numbers.
+- [x] T012 [P] [US2] Add unit tests for read caps, grep caps, denylist, and
   normal fixture reads/searches.
 
 Checkpoint: Local tools are safe and testable without model access.
@@ -47,19 +47,19 @@ Checkpoint: Local tools are safe and testable without model access.
 
 Purpose: Convert model tool-call turns into safe local exploration and citations.
 
-- [ ] T013 [US1] Add `Settings`, `ExploreRequest`, `ExploreResult`, and error
+- [x] T013 [US1] Add `Settings`, `ExploreRequest`, `ExploreResult`, and error
   types in `src/repo_context/types.py` and `config.py`.
-- [ ] T014 [P] [US1] Add config precedence tests for CLI overrides, env, TOML,
+- [x] T014 [P] [US1] Add config precedence tests for CLI overrides, env, TOML,
   and defaults.
-- [ ] T015 [US1] Implement OpenAI-compatible HTTP client in
+- [x] T015 [US1] Implement OpenAI-compatible HTTP client in
   `src/repo_context/llm.py`.
-- [ ] T016 [US1] Implement tool schema generation and tool-call dispatch in
+- [x] T016 [US1] Implement tool schema generation and tool-call dispatch in
   `src/repo_context/agent.py`.
-- [ ] T017 [US1] Enforce max turns, unsupported tool rejection, endpoint timeout,
+- [x] T017 [US1] Enforce max turns, unsupported tool rejection, endpoint timeout,
   and bad-response handling.
-- [ ] T018 [P] [US1] Add mocked endpoint contract tests for READ/GLOB/GREP
+- [x] T018 [P] [US1] Add mocked endpoint contract tests for READ/GLOB/GREP
   multi-turn exploration.
-- [ ] T019 [US1] Normalize final output into citation-first text and structured
+- [x] T019 [US1] Normalize final output into citation-first text and structured
   JSON result.
 
 Checkpoint: Core can answer fixture questions using a mocked endpoint.
@@ -71,14 +71,14 @@ Goal: Provide `repo-context explore` for direct local use.
 Independent Test: Run against fixture repo with mocked endpoint and verify cited
 file-line output.
 
-- [ ] T020 [US1] Implement CLI parser for `repo-context explore`.
-- [ ] T021 [US1] Add `--query`, `--repo`, `--max-turns`, `--citation`, and
+- [x] T020 [US1] Implement CLI parser for `repo-context explore`.
+- [x] T021 [US1] Add `--query`, `--repo`, `--max-turns`, `--citation`, and
   `--format text|json`.
-- [ ] T022 [US1] Map structured errors to explicit exit codes and stderr
+- [x] T022 [US1] Map structured errors to explicit exit codes and stderr
   messages.
-- [ ] T023 [P] [US1] Add CLI contract tests for required args, defaults, text
+- [x] T023 [P] [US1] Add CLI contract tests for required args, defaults, text
   output, JSON output, and config failure.
-- [ ] T024 [US1] Add integration test with fixture repository and mocked
+- [x] T024 [US1] Add integration test with fixture repository and mocked
   endpoint.
 
 Checkpoint: CLI MVP is usable without MCP.
@@ -90,13 +90,13 @@ Goal: Expose the same core through one MCP tool.
 Independent Test: Invoke `explore_repository` with a mocked core and verify
 schema plus delegation.
 
-- [ ] T025 [US3] Add MCP server entrypoint in `src/repo_context/mcp_server.py`.
-- [ ] T026 [US3] Register `explore_repository(query, repo_root?, max_turns?,
+- [x] T025 [US3] Add MCP server entrypoint in `src/repo_context/mcp_server.py`.
+- [x] T026 [US3] Register `explore_repository(query, repo_root?, max_turns?,
   citation?)`.
-- [ ] T027 [US3] Map MCP request data to `ExploreRequest`.
-- [ ] T028 [US3] Return core result or structured error without duplicating
+- [x] T027 [US3] Map MCP request data to `ExploreRequest`.
+- [x] T028 [US3] Return core result or structured error without duplicating
   safety or endpoint logic.
-- [ ] T029 [P] [US3] Add MCP contract tests for tool schema, valid invocation,
+- [x] T029 [P] [US3] Add MCP contract tests for tool schema, valid invocation,
   invalid root, and core delegation.
 
 Checkpoint: MCP behavior matches CLI/core behavior.
@@ -108,13 +108,13 @@ Goal: Make the tool safe and diagnosable for daily agent use.
 Independent Test: Enable trajectory logging and inspect log content for allowed
 metadata and denied content omission.
 
-- [ ] T030 [US4] Implement optional trajectory logging under
+- [x] T030 [US4] Implement optional trajectory logging under
   `FASTCONTEXT_TRAJ_DIR`.
-- [ ] T031 [P] [US4] Add tests proving denied file contents are not logged.
+- [x] T031 [P] [US4] Add tests proving denied file contents are not logged.
 - [ ] T032 [US4] Add structured stderr logging for CLI and MCP server events.
-- [ ] T033 [P] [US4] Add README quickstart, MCP config examples, and
+- [x] T033 [P] [US4] Add README quickstart, MCP config examples, and
   troubleshooting notes.
-- [ ] T034 [US4] Run `uv run pytest`, `uv run ruff check .`, and the selected
+- [x] T034 [US4] Run `uv run pytest`, `uv run ruff check .`, and the selected
   type checker.
 
 ## Dependencies & Execution Order

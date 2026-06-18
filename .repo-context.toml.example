@@ -1,0 +1,14 @@
+[explorer]
+max_turns = 6
+citation = true
+ignore = [".git", ".venv", "node_modules", "dist", "build"]
+traj_dir = ".fastcontext"
+
+[model]
+base_url = "http://localhost:8000/v1"
+model = "your-model-name"
+api_key = ""
+
+[tools]
+max_read_bytes = 12000
+max_grep_results = 50

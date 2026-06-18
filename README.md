@@ -8,8 +8,9 @@ same core, not the primary abstraction.
 
 ## Current Status
 
-This repository is at specification stage. The implementation target is Python
-3.13+ managed with `uv`.
+This repository has the initial Python 3.13+ implementation for spec `001`:
+CLI, shared exploration core, read-only repository tools, OpenAI-compatible
+chat-completions client, optional trajectory logging, and a thin MCP adapter.
 
 Primary planning artifacts:
 
@@ -18,12 +19,12 @@ Primary planning artifacts:
 - [Task breakdown](specs/001-repo-context-explorer/tasks.md)
 - [Implementation order](docs/implementation-order.md)
 
-## Target Interfaces
+## Interfaces
 
 CLI MVP:
 
 ```bash
-repo-context explore \
+uv run repo-context explore \
   --query "Find the request validation logic" \
   --repo . \
   --max-turns 6 \
@@ -32,15 +33,29 @@ repo-context explore \
 
 MCP adapter:
 
-```text
-explore_repository(query, repo_root?, max_turns?, citation?)
+```bash
+uv run repo-context mcp --transport stdio
 ```
+
+Tool: `explore_repository(query, repo_root?, max_turns?, citation?)`
 
 Configuration sources:
 
 - Environment variables such as `FASTCONTEXT_BASE_URL`,
   `FASTCONTEXT_MODEL`, and `FASTCONTEXT_API_KEY`.
 - Optional project file: `.repo-context.toml`.
+
+Copy `.repo-context.toml.example` or set the environment variables in
+`.env.example`. `FASTCONTEXT_BASE_URL` and `FASTCONTEXT_MODEL` are required for
+real exploration runs.
+
+## Validate
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run mypy
+```
 
 ## Scope
 

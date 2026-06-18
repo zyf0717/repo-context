@@ -149,13 +149,20 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
+.venv/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# repo-context local runtime config/state
+.repo-context.toml
+.fastcontext/
 
 # Spyder project settings
 .spyderproject
