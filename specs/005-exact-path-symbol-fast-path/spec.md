@@ -1,0 +1,163 @@
+# Spec 005: Exact Path/Symbol Fast Path
+
+Status: planned
+
+Extends: `004-fastcontext-parallel-tool-executor`
+
+## Summary
+
+Add a conservative deterministic preflight before the model loop. It
+short-circuits only when the query contains exact locally verifiable evidence:
+explicit repository-relative citations, explicit file-path symbol/text lookups,
+or one unique pathless definition match.
+
+Successful fast-path results are evidence-only: controller-normalized citations
+with `turns_used=0`. They do not require endpoint configuration and must not
+include explanations, prose, model-authored rationale, or semantic summaries.
+
+Anything requiring interpretation, synthesis, comparison, semantic judgment, or
+unclear confidence falls back to the existing FastContext loop unchanged.
+
+## Requirements
+
+- Run exact preflight after request validation and repository-root resolution,
+  before endpoint configuration is required.
+- Return immediately only when exact local evidence is sufficient.
+- Preserve existing citation-mode output:
+  `path:start-end` lines, or `NO_CITATIONS_FOUND`.
+- Preserve existing JSON result shape.
+- Preserve repository safety:
+  - safe path resolution;
+  - denylist enforcement;
+  - symlink escape rejection;
+  - read byte caps;
+  - no denied file content leakage.
+- Preserve the existing FastContext-compatible model loop for all fallback
+  cases.
+
+## Fast-Path Cases
+
+### Explicit Citation
+
+If the query contains a parseable repository-relative citation such as:
+
+```text
+src/repo_context/agent.py:10-30
+```
+
+the controller should verify the path and line range with safe bounded
+`read_file`. If verification succeeds, return the normalized citation with
+`turns_used=0`.
+
+### Explicit Path Plus Exact Symbol/Text
+
+If the query contains a safe repository-relative file path and an exact
+backticked, quoted, or token-like target, the controller may scan only that file.
+
+Examples:
+
+```text
+In src/repo_context/config.py, find `max_parallel_tools`.
+Find "def explore" in src/repo_context/agent.py.
+```
+
+Allowed short-circuits in this case:
+
+- exact Python definition matches;
+- exact assignment/config-style matches;
+- exact token/text matches in the explicitly named file.
+
+Return matching line citations only when the result count is positive and within
+the final citation cap.
+
+### Exact Symbol Without Path
+
+If the query contains an exact symbol but no explicit path:
+
+- scan safe text files only;
+- short-circuit only if exactly one high-confidence definition-pattern match
+  exists across the repository;
+- pathless assignment/config-style matches do not short-circuit in v1;
+- if multiple files match, multiple definition patterns match, limits are
+  exceeded, or confidence is otherwise unclear, fall back to the model loop.
+
+High-confidence pathless definition patterns for v1:
+
+```text
+def SYMBOL
+async def SYMBOL
+class SYMBOL
+```
+
+## Fallback Rules
+
+Fall back to the model loop when:
+
+- no exact match exists;
+- a path is missing, denied, unsafe, or ambiguous;
+- multiple definition matches exist;
+- only pathless assignment/config-style matches exist;
+- candidate count exceeds the final citation cap;
+- the query asks for interpretation, synthesis, comparison, behavior,
+  ownership, architecture, "why", or "how";
+- confidence is unclear.
+
+Fallback must preserve current endpoint error behavior. Endpoint configuration
+is optional only when the exact fast path succeeds.
+
+## Implementation Notes
+
+Add a private helper in `agent.py`:
+
+```python
+def _try_exact_fast_path(
+    request: ExploreRequest,
+    *,
+    repo_root: Path,
+    settings: Settings,
+) -> ExploreResult | None:
+    ...
+```
+
+The helper should:
+
+- use the existing `Citation`, `ExploreResult`, `PathSafety`, and `read_file`
+  paths where possible;
+- avoid adding public request/result fields;
+- return `None` for all fallback cases;
+- return an `ExploreResult` only for validated exact evidence;
+- use `turns_used=0` for success;
+- keep warnings empty unless an existing stable warning is clearly applicable.
+
+`explore()` should call this helper before `settings.require_endpoint()`.
+
+## Non-Goals
+
+- No semantic search or local ranking.
+- No embeddings, vector store, or context-pack output.
+- No new CLI or MCP arguments.
+- No README or broad user-doc update until implementation lands.
+- No pathless assignment/config short-circuit in v1.
+- No explanation generation in the fast path.
+
+## Coverage
+
+Implementation should add tests for:
+
+- explicit `path:start-end` query returns `turns_used=0` and does not call the
+  endpoint;
+- explicit path plus symbol returns matching lines in that file;
+- explicit path plus assignment/config token may short-circuit;
+- pathless unique `def`/`async def`/`class` short-circuits;
+- pathless assignment/config token falls back;
+- multiple definition matches fall back;
+- semantic wording with an exact token falls back;
+- denied or traversal paths do not leak content and do not short-circuit;
+- endpoint config missing is allowed for fast-path success but still errors for
+  fallback queries;
+- CLI text output is normalized for fast-path success;
+- JSON output reports `turns_used=0`.
+
+Opt-in endpoint-backed e2e timing tests may include exact path and exact unique
+symbol cases. Expected local latency should be sub-second, but timing should not
+be a default CI assertion.
