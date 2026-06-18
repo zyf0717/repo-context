@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -187,12 +188,12 @@ def explore(
                 evidence.seen_tool_calls.add(_tool_call_fingerprint(tool_call))
 
             messages.append(_assistant_tool_message(message))
-            for tool_call in tool_calls:
-                observation = _execute_tool_call(
-                    tool_call,
-                    repo_root=repo_root,
-                    settings=settings,
-                )
+            observations = _execute_tool_calls_parallel(
+                tool_calls,
+                repo_root=repo_root,
+                settings=settings,
+            )
+            for tool_call, observation in zip(tool_calls, observations, strict=True):
                 observation.tool_call_id = tool_call.id
                 truncated = truncated or observation.truncated
                 if (
@@ -635,9 +636,15 @@ def _first_repeated_tool_call(
     evidence: EvidenceState,
     tool_calls: list[ToolCall],
 ) -> ToolCall | None:
+    batch_fingerprints: set[str] = set()
     for tool_call in tool_calls:
-        if _tool_call_fingerprint(tool_call) in evidence.seen_tool_calls:
+        fingerprint = _tool_call_fingerprint(tool_call)
+        if (
+            fingerprint in evidence.seen_tool_calls
+            or fingerprint in batch_fingerprints
+        ):
             return tool_call
+        batch_fingerprints.add(fingerprint)
     return None
 
 
@@ -752,6 +759,8 @@ def _initial_messages(
                 "If a read returns PATH_NOT_FOUND, INVALID_TOOL_ARGUMENTS, or "
                 "PATH_OUTSIDE_ROOT, correct the path once using the known file "
                 "list or broaden search; do not repeat the same failing call. "
+                "When searches or reads are independent, issue them as multiple "
+                "tool calls in the same turn. "
                 "For exact symbol, function, or class names, use repo_grep "
                 "before reading broad file ranges. "
                 f"Use read_file line ranges of at most {settings.max_read_lines} "
@@ -889,6 +898,35 @@ def _with_line_numbers(content: str, line_range: str) -> str:
     if content.endswith("\n"):
         return "\n".join(lines) + "\n"
     return "\n".join(lines)
+
+
+def _execute_tool_calls_parallel(
+    tool_calls: list[ToolCall],
+    *,
+    repo_root: Path,
+    settings: Settings,
+) -> list[ToolObservation]:
+    if len(tool_calls) <= 1 or settings.max_parallel_tools <= 1:
+        return [
+            _execute_tool_call(
+                tool_call,
+                repo_root=repo_root,
+                settings=settings,
+            )
+            for tool_call in tool_calls
+        ]
+    worker_count = min(settings.max_parallel_tools, len(tool_calls))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [
+            executor.submit(
+                _execute_tool_call,
+                tool_call,
+                repo_root=repo_root,
+                settings=settings,
+            )
+            for tool_call in tool_calls
+        ]
+        return [future.result() for future in futures]
 
 
 def _execute_tool_call(

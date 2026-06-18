@@ -17,3 +17,4 @@ max_read_bytes = 12000
 max_grep_results = 50
 max_observation_chars = 6000
 max_read_lines = 120
+max_parallel_tools = 4

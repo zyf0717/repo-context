@@ -20,6 +20,7 @@ ENV_KEYS = (
     "FASTCONTEXT_MAX_READ_LINES",
     "FASTCONTEXT_MAX_COMPLETION_TOKENS",
     "FASTCONTEXT_TEMPERATURE",
+    "FASTCONTEXT_MAX_PARALLEL_TOOLS",
 )
 
 
@@ -37,6 +38,7 @@ def test_config_defaults_include_latency_controls(
     assert settings.max_read_lines == 120
     assert settings.max_completion_tokens == 512
     assert settings.temperature == 0.0
+    assert settings.max_parallel_tools == 4
 
 
 def test_config_precedence_defaults_toml_env_overrides(
@@ -63,12 +65,14 @@ max_read_bytes = 10
 max_grep_results = 11
 max_observation_chars = 12
 max_read_lines = 13
+max_parallel_tools = 15
 """,
         encoding="utf-8",
     )
     monkeypatch.setenv("FASTCONTEXT_BASE_URL", "http://env/v1")
     monkeypatch.setenv("FASTCONTEXT_MAX_TURNS", "4")
     monkeypatch.setenv("FASTCONTEXT_MAX_READ_LINES", "14")
+    monkeypatch.setenv("FASTCONTEXT_MAX_PARALLEL_TOOLS", "16")
     monkeypatch.setenv("FASTCONTEXT_TEMPERATURE", "0.1")
 
     settings = load_settings(
@@ -77,6 +81,7 @@ max_read_lines = 13
             max_turns=5,
             max_read_bytes=20,
             max_observation_chars=30,
+            max_parallel_tools=17,
         ),
     )
 
@@ -91,6 +96,7 @@ max_read_lines = 13
     assert settings.max_read_lines == 14
     assert settings.max_completion_tokens == 300
     assert settings.temperature == 0.1
+    assert settings.max_parallel_tools == 17
 
 
 def test_invalid_integer_env_raises_config_error(
@@ -105,3 +111,18 @@ def test_invalid_integer_env_raises_config_error(
         load_settings(repo_root=tmp_path)
 
     assert exc_info.value.code == "CONFIG_INVALID"
+
+
+def test_max_parallel_tools_must_be_positive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for key in ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("FASTCONTEXT_MAX_PARALLEL_TOOLS", "0")
+
+    with pytest.raises(ExplorerError) as exc_info:
+        load_settings(repo_root=tmp_path)
+
+    assert exc_info.value.code == "CONFIG_INVALID"
+    assert exc_info.value.details == {"max_parallel_tools": 0}

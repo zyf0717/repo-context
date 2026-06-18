@@ -12,6 +12,9 @@ to `repo_root`.
 - Enforce configured caps and report truncation.
 - Never mutate files, run shell commands, install dependencies, or access the
   network.
+- The model may emit multiple tool calls in one assistant message. The
+  controller may execute those local tools concurrently, but observations are
+  returned to the model in the original tool-call order.
 
 Default denylist:
 

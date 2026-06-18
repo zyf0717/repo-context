@@ -42,6 +42,7 @@ def explore_repository_handler(
                 max_read_lines=settings.max_read_lines,
                 max_completion_tokens=settings.max_completion_tokens,
                 temperature=settings.temperature,
+                max_parallel_tools=settings.max_parallel_tools,
             )
         request = ExploreRequest(
             query=query,

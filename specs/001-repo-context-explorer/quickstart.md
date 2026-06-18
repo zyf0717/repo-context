@@ -39,6 +39,7 @@ export FASTCONTEXT_MAX_OBSERVATION_CHARS=6000
 export FASTCONTEXT_MAX_READ_LINES=120
 export FASTCONTEXT_MAX_COMPLETION_TOKENS=512
 export FASTCONTEXT_TEMPERATURE=0
+export FASTCONTEXT_MAX_PARALLEL_TOOLS=4
 ```
 
 Optional project config:
@@ -62,6 +63,7 @@ max_read_bytes = 12000
 max_grep_results = 50
 max_observation_chars = 6000
 max_read_lines = 120
+max_parallel_tools = 4
 ```
 
 The repository includes `.repo-context.toml.example` with this shape.

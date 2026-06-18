@@ -2,7 +2,9 @@
 
 This project should be built as a CLI-first repository explorer. MCP remains an
 adapter over the same core so the product has one exploration engine and one
-security boundary.
+security boundary. The architecture follows Microsoft FastContext's delegated
+explorer shape: read-only Read/Glob/Grep-style tools, same-turn parallel local
+tool calls, and compact file-line evidence.
 
 ## 1. Spec/contracts and package skeleton
 
@@ -42,7 +44,7 @@ Exit criteria:
 Implement the FastContext-style harness around the local tools. Spec
 `002-deterministic-explorer-harness` hardens this phase with controller-owned
 finalization and citation validation. Spec `003-latency-bounded-explorer-harness`
-adds endpoint latency controls and bounded model observations. Planned spec
+adds endpoint latency controls and bounded model observations. Spec
 `004-fastcontext-parallel-tool-executor` aligns local execution with
 FastContext same-turn parallel tool-call behavior.
 

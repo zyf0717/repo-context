@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from threading import Event, Lock
 from typing import Any, cast
 
 import httpx
 import pytest
 
+import repo_context.agent as agent_module
 from repo_context.agent import _model_observation_payload, explore, format_text_result
 from repo_context.config import Settings
 from repo_context.llm import ChatClient
-from repo_context.types import ExploreRequest, ExplorerError, ToolObservation
+from repo_context.types import ExploreRequest, ExplorerError, ToolCall, ToolObservation
 
 
 def test_mock_endpoint_drives_glob_grep_read_loop(tmp_path: Path) -> None:
@@ -158,6 +160,51 @@ def test_repeated_read_breaks_loop_with_best_evidence(tmp_path: Path) -> None:
     assert "repeated tool call stopped exploration" in result.warnings
 
 
+def test_duplicate_same_turn_tool_call_stops_before_scheduling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            _multi_tool_response(
+                [
+                    ("call_1", "repo_glob", {"pattern": "**/*.py"}),
+                    ("call_2", "repo_glob", {"pattern": "**/*.py"}),
+                ]
+            )
+        ]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+
+    def fail_if_scheduled(
+        tool_calls: list[ToolCall],
+        *,
+        repo_root: Path,
+        settings: Settings,
+    ) -> list[ToolObservation]:
+        raise AssertionError("duplicate same-turn calls must not be scheduled")
+
+    monkeypatch.setattr(
+        agent_module,
+        "_execute_tool_calls_parallel",
+        fail_if_scheduled,
+    )
+
+    result = explore(
+        ExploreRequest(query="Find files", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert len(seen_payloads) == 1
+    assert result.answer == "NO_CITATIONS_FOUND"
+    assert "repeated tool call stopped exploration" in result.warnings
+
+
 def test_model_read_without_range_is_bounded_before_observation(
     tmp_path: Path,
 ) -> None:
@@ -229,6 +276,166 @@ def test_model_observation_content_is_capped_for_endpoint_payload(
     assert len(str(observation["content"])) == 20
     assert observation["content_truncated_by_chars"] is True
     assert observation["truncated"] is True
+
+
+def test_same_turn_tool_calls_execute_concurrently_and_preserve_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            _multi_tool_response(
+                [
+                    ("call_1", "repo_glob", {"pattern": "src/**/*.py"}),
+                    ("call_2", "repo_glob", {"pattern": "tests/**/*.py"}),
+                ]
+            ),
+            _message_response("NO_CITATIONS_FOUND"),
+        ]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(
+        base_url="http://test/v1",
+        model="test-model",
+        max_parallel_tools=2,
+    )
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+    second_started = Event()
+    lock = Lock()
+    started: list[str] = []
+    first_call_saw_second: list[bool] = []
+
+    def fake_execute(
+        tool_call: ToolCall,
+        *,
+        repo_root: Path,
+        settings: Settings,
+    ) -> ToolObservation:
+        with lock:
+            started.append(tool_call.id)
+            if len(started) >= 2:
+                second_started.set()
+        if tool_call.id == "call_1":
+            first_call_saw_second.append(second_started.wait(timeout=1.0))
+        return ToolObservation(matches=[tool_call.id])
+
+    monkeypatch.setattr(agent_module, "_execute_tool_call", fake_execute)
+
+    explore(
+        ExploreRequest(query="Find independent files", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert first_call_saw_second == [True]
+    messages = cast(list[dict[str, Any]], seen_payloads[1]["messages"])
+    tool_messages = [message for message in messages if message.get("role") == "tool"]
+    assert [message["tool_call_id"] for message in tool_messages] == [
+        "call_1",
+        "call_2",
+    ]
+    contents = [
+        cast(dict[str, object], json.loads(str(message["content"])))
+        for message in tool_messages
+    ]
+    assert [content["matches"] for content in contents] == [["call_1"], ["call_2"]]
+
+
+def test_max_parallel_tools_one_preserves_serial_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            _multi_tool_response(
+                [
+                    ("call_1", "repo_glob", {"pattern": "src/**/*.py"}),
+                    ("call_2", "repo_glob", {"pattern": "tests/**/*.py"}),
+                ]
+            ),
+            _message_response("NO_CITATIONS_FOUND"),
+        ]
+    )
+    settings = Settings(
+        base_url="http://test/v1",
+        model="test-model",
+        max_parallel_tools=1,
+    )
+    client = ChatClient(settings, transport=_mock_transport(responses, []))
+    second_started = Event()
+    lock = Lock()
+    started: list[str] = []
+    first_call_saw_second: list[bool] = []
+
+    def fake_execute(
+        tool_call: ToolCall,
+        *,
+        repo_root: Path,
+        settings: Settings,
+    ) -> ToolObservation:
+        with lock:
+            started.append(tool_call.id)
+            if len(started) >= 2:
+                second_started.set()
+        if tool_call.id == "call_1":
+            first_call_saw_second.append(second_started.wait(timeout=0.01))
+        return ToolObservation(matches=[tool_call.id])
+
+    monkeypatch.setattr(agent_module, "_execute_tool_call", fake_execute)
+
+    explore(
+        ExploreRequest(query="Find independent files", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert started == ["call_1", "call_2"]
+    assert first_call_saw_second == [False]
+
+
+def test_same_turn_tool_error_does_not_cancel_sibling_tool(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".env").write_text("SECRET=1", encoding="utf-8")
+    (repo / "safe.py").write_text("print('safe')\n", encoding="utf-8")
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            _multi_tool_response(
+                [
+                    ("call_1", "read_file", {"path": ".env"}),
+                    ("call_2", "repo_glob", {"pattern": "**/*.py"}),
+                ]
+            ),
+            _message_response("NO_CITATIONS_FOUND"),
+        ]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+
+    explore(
+        ExploreRequest(query="Find safe files", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    messages = cast(list[dict[str, Any]], seen_payloads[1]["messages"])
+    tool_messages = [message for message in messages if message.get("role") == "tool"]
+    contents = [
+        cast(dict[str, object], json.loads(str(message["content"])))
+        for message in tool_messages
+    ]
+    first_error = cast(dict[str, object], contents[0]["error"])
+    assert contents[0]["ok"] is False
+    assert first_error["code"] == "PATH_DENIED"
+    assert contents[1]["ok"] is True
+    assert contents[1]["matches"] == ["safe.py"]
 
 
 def test_narrow_evidence_stops_before_another_broad_read(tmp_path: Path) -> None:
@@ -365,6 +572,9 @@ def test_citation_prompt_uses_final_answer_block_and_normalizes_output(
 
     first_messages = cast(list[dict[str, Any]], seen_payloads[0]["messages"])
     assert "<final_answer>" in str(first_messages[0]["content"])
+    assert "multiple tool calls in the same turn" in str(
+        first_messages[0]["content"]
+    )
     assert result.answer == "src/api/validation.py:1-2"
     assert [citation.label() for citation in result.citations] == [
         "src/api/validation.py:1-2"
@@ -551,6 +761,34 @@ def _tool_response(
                                 "arguments": json.dumps(arguments),
                             },
                         }
+                    ],
+                }
+            }
+        ]
+    }
+
+
+def _multi_tool_response(
+    calls: list[tuple[str, str, dict[str, object]]],
+    *,
+    content: str | None = None,
+) -> dict[str, object]:
+    return {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(arguments),
+                            },
+                        }
+                        for call_id, name, arguments in calls
                     ],
                 }
             }

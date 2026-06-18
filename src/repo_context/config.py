@@ -24,6 +24,7 @@ class Settings:
     max_read_lines: int = 120
     max_completion_tokens: int = 512
     temperature: float = 0.0
+    max_parallel_tools: int = 4
 
     def require_endpoint(self) -> None:
         if not self.base_url:
@@ -53,6 +54,7 @@ class SettingsOverrides:
     max_read_lines: int | None = None
     max_completion_tokens: int | None = None
     temperature: float | None = None
+    max_parallel_tools: int | None = None
 
 
 def load_settings(
@@ -118,6 +120,10 @@ def _apply_toml(settings: Settings, path: Path) -> Settings:
             tools.get("max_read_lines", settings.max_read_lines),
             "max_read_lines",
         ),
+        max_parallel_tools=_int_value(
+            tools.get("max_parallel_tools", settings.max_parallel_tools),
+            "max_parallel_tools",
+        ),
         max_completion_tokens=_int_value(
             model.get("max_completion_tokens", settings.max_completion_tokens),
             "max_completion_tokens",
@@ -169,6 +175,11 @@ def _apply_env(settings: Settings, env: os._Environ[str]) -> Settings:
             "FASTCONTEXT_MAX_COMPLETION_TOKENS",
             settings.max_completion_tokens,
         ),
+        max_parallel_tools=_env_int(
+            env,
+            "FASTCONTEXT_MAX_PARALLEL_TOOLS",
+            settings.max_parallel_tools,
+        ),
         temperature=_env_float(
             env,
             "FASTCONTEXT_TEMPERATURE",
@@ -215,6 +226,9 @@ def _apply_overrides(settings: Settings, overrides: SettingsOverrides) -> Settin
         temperature=overrides.temperature
         if overrides.temperature is not None
         else settings.temperature,
+        max_parallel_tools=overrides.max_parallel_tools
+        if overrides.max_parallel_tools is not None
+        else settings.max_parallel_tools,
     )
 
 
@@ -226,6 +240,7 @@ def _validate_settings(settings: Settings) -> None:
         "max_observation_chars": settings.max_observation_chars,
         "max_read_lines": settings.max_read_lines,
         "max_completion_tokens": settings.max_completion_tokens,
+        "max_parallel_tools": settings.max_parallel_tools,
     }
     for name, value in int_fields.items():
         if value <= 0:

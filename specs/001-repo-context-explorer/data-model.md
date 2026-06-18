@@ -26,6 +26,8 @@ Fields:
   `read_file`; default `120`.
 - `max_completion_tokens: int`: Endpoint completion cap; default `512`.
 - `temperature: float`: Endpoint sampling temperature; default `0`.
+- `max_parallel_tools: int`: Max same-turn local tool calls to execute
+  concurrently; default `4`.
 
 Primary env vars:
 
@@ -41,6 +43,7 @@ Primary env vars:
 - `FASTCONTEXT_MAX_READ_LINES`
 - `FASTCONTEXT_MAX_COMPLETION_TOKENS`
 - `FASTCONTEXT_TEMPERATURE`
+- `FASTCONTEXT_MAX_PARALLEL_TOOLS`
 
 ## ExploreRequest
 

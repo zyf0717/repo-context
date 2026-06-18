@@ -13,8 +13,8 @@ CLI, shared exploration core, read-only repository tools, OpenAI-compatible
 chat-completions client, optional trajectory logging, and a thin MCP adapter.
 It also includes spec `002` hardening for deterministic controller-owned
 finalization and citation-mode rendering, plus spec `003` latency controls for
-bounded endpoint prompt growth. Spec `004` is planned to align local tool
-execution with FastContext same-turn parallel tool-call behavior.
+bounded endpoint prompt growth, and spec `004` same-turn parallel local tool
+execution.
 
 Primary planning artifacts:
 
@@ -25,6 +25,24 @@ Primary planning artifacts:
 - [Latency-bounded explorer harness](specs/003-latency-bounded-explorer-harness/spec.md)
 - [FastContext-compatible parallel tool executor](specs/004-fastcontext-parallel-tool-executor/spec.md)
 - [Implementation order](docs/implementation-order.md)
+
+## FastContext Alignment
+
+This project intentionally follows Microsoft FastContext's explorer shape:
+
+- Delegated repository exploration: CLI/MCP call a focused explorer core that
+  returns evidence for a downstream coding agent.
+- Read-only tools: the only model-callable repository tools are
+  `read_file`, `repo_glob`, and `repo_grep`, corresponding to FastContext's
+  `Read`, `Glob`, and `Grep`.
+- Same-turn parallel tool calling: independent local tool calls from one model
+  message execute concurrently, while model endpoint requests remain serial.
+- Compact evidence: citation mode renders controller-validated `path:start-end`
+  lines, with the model prompted toward a `<final_answer>` block.
+
+Primary references: [Microsoft FastContext README](https://github.com/microsoft/fastcontext),
+[FastContext model card](https://huggingface.co/microsoft/FastContext-1.0-4B-SFT),
+and [FastContext paper](https://arxiv.org/html/2606.14066v1).
 
 ## Usage
 
@@ -58,10 +76,8 @@ FASTCONTEXT_MODEL=your-model-name
 
 Endpoint requests use a 120 second default timeout. The harness also caps
 model-observation payloads, model-requested read spans, completion tokens, and
-temperature to reduce latency variance.
-
-Planned spec `004` will execute independent same-turn local tool calls
-concurrently with a default worker cap of `4`. Model endpoint requests will
+temperature to reduce latency variance. Independent same-turn local tool calls
+execute concurrently with a default worker cap of `4`; model endpoint requests
 remain serial.
 
 Configuration precedence:
@@ -173,6 +189,7 @@ In scope:
 - Local, read-only repository exploration.
 - Root-scoped `read_file`, `repo_glob`, and `repo_grep` tools.
 - OpenAI-compatible chat completion loop with bounded tool observations.
+- Same-turn concurrent execution for independent local tool calls.
 - CLI output with file paths and line-range citations.
 - MCP adapter that delegates to the CLI/core implementation.
 

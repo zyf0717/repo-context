@@ -19,12 +19,21 @@ read-only repository access and citation generation the core capability. MCP is
 valuable, but it should be an adapter over that core rather than the component
 that owns exploration logic.
 
+Primary upstream references:
+
+- [Microsoft FastContext README](https://github.com/microsoft/fastcontext)
+- [FastContext model card](https://huggingface.co/microsoft/FastContext-1.0-4B-SFT)
+- [FastContext paper](https://arxiv.org/html/2606.14066v1)
+
 ## Rationale
 
 - CLI-first is easier to test independently from MCP clients.
 - A single core reduces duplicate safety checks and divergent behavior.
 - FastContext-style exploration fits the desired use case: ask focused questions
   about unfamiliar code and get compact file-line evidence.
+- The upstream FastContext shape delegates exploration to a dedicated subagent,
+  exposes read-only Read/Glob/Grep tools, supports same-turn parallel tool
+  calls, and returns compact file-line citations.
 - OpenAI-compatible chat completions are a narrower first backend target than a
   generic ranked context-search endpoint.
 - The deferred MCP-first tools (`context_search`, `context_pack`, `context_get`)
