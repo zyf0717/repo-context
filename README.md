@@ -13,7 +13,8 @@ CLI, shared exploration core, read-only repository tools, OpenAI-compatible
 chat-completions client, optional trajectory logging, and a thin MCP adapter.
 It also includes spec `002` hardening for deterministic controller-owned
 finalization and citation-mode rendering, plus spec `003` latency controls for
-bounded endpoint prompt growth.
+bounded endpoint prompt growth. Spec `004` is planned to align local tool
+execution with FastContext same-turn parallel tool-call behavior.
 
 Primary planning artifacts:
 
@@ -22,6 +23,7 @@ Primary planning artifacts:
 - [Task breakdown](specs/001-repo-context-explorer/tasks.md)
 - [Deterministic explorer harness](specs/002-deterministic-explorer-harness/spec.md)
 - [Latency-bounded explorer harness](specs/003-latency-bounded-explorer-harness/spec.md)
+- [FastContext-compatible parallel tool executor](specs/004-fastcontext-parallel-tool-executor/spec.md)
 - [Implementation order](docs/implementation-order.md)
 
 ## Usage
@@ -57,6 +59,10 @@ FASTCONTEXT_MODEL=your-model-name
 Endpoint requests use a 120 second default timeout. The harness also caps
 model-observation payloads, model-requested read spans, completion tokens, and
 temperature to reduce latency variance.
+
+Planned spec `004` will execute independent same-turn local tool calls
+concurrently with a default worker cap of `4`. Model endpoint requests will
+remain serial.
 
 Configuration precedence:
 

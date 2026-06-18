@@ -42,7 +42,9 @@ Exit criteria:
 Implement the FastContext-style harness around the local tools. Spec
 `002-deterministic-explorer-harness` hardens this phase with controller-owned
 finalization and citation validation. Spec `003-latency-bounded-explorer-harness`
-adds endpoint latency controls and bounded model observations.
+adds endpoint latency controls and bounded model observations. Planned spec
+`004-fastcontext-parallel-tool-executor` aligns local execution with
+FastContext same-turn parallel tool-call behavior.
 
 - Send the user query, tool schemas, and bounded observations to the configured
   OpenAI-compatible chat completion endpoint.
@@ -55,11 +57,15 @@ adds endpoint latency controls and bounded model observations.
   default.
 - Bound prompt growth with observation caps, read-line caps, completion-token
   limits, and deterministic early finalization from narrow evidence.
+- Execute same-turn model tool calls concurrently while preserving deterministic
+  observation order in the transcript.
 
 Exit criteria:
 
 - Mock endpoint tests can drive READ/GLOB/GREP calls and return final cited
   paths without touching real external services.
+- Mocked parallel tool-call tests preserve transcript order and prove repeated
+  calls stop before scheduling tool work.
 
 ## 4. CLI MVP
 
