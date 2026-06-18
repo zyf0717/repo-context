@@ -1,0 +1,120 @@
+# Explorer Tools Contract
+
+The model may request only these local tools. All tools are read-only and scoped
+to `repo_root`.
+
+## Shared Rules
+
+- Resolve paths with symlink awareness before access.
+- Reject paths outside `repo_root`.
+- Reject denylisted files and directories before reading content.
+- Return repository-relative paths.
+- Enforce configured caps and report truncation.
+- Never mutate files, run shell commands, install dependencies, or access the
+  network.
+
+Default denylist:
+
+```text
+.git/**
+.env
+.env.*
+*.pem
+*.key
+id_rsa
+id_ed25519
+**/secrets/**
+**/.aws/**
+**/.ssh/**
+.venv/**
+venv/**
+node_modules/**
+dist/**
+build/**
+```
+
+## `read_file`
+
+Arguments:
+
+```json
+{
+  "path": "src/app.py",
+  "start_line": 1,
+  "end_line": 120
+}
+```
+
+Returns:
+
+```json
+{
+  "path": "src/app.py",
+  "line_range": "1-120",
+  "content": "file contents...",
+  "truncated": false
+}
+```
+
+Validation:
+
+- `path` is required.
+- `start_line` and `end_line` are optional positive integers.
+- Returned content must not exceed `FASTCONTEXT_MAX_READ_BYTES`.
+
+## `repo_glob`
+
+Arguments:
+
+```json
+{
+  "pattern": "src/**/*.py"
+}
+```
+
+Returns:
+
+```json
+{
+  "matches": ["src/app.py", "src/api/validation.py"],
+  "truncated": false
+}
+```
+
+Validation:
+
+- Pattern is interpreted relative to `repo_root`.
+- Denylisted matches are omitted.
+
+## `repo_grep`
+
+Arguments:
+
+```json
+{
+  "pattern": "validate_request",
+  "glob": "src/**/*.py",
+  "max_results": 50
+}
+```
+
+Returns:
+
+```json
+{
+  "hits": [
+    {
+      "path": "src/api/validation.py",
+      "line": 42,
+      "text": "def validate_request(...):"
+    }
+  ],
+  "truncated": false
+}
+```
+
+Validation:
+
+- `pattern` is required.
+- `glob` is optional and repository-relative.
+- `max_results` cannot exceed configured `FASTCONTEXT_MAX_GREP_RESULTS`.

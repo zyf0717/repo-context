@@ -1,0 +1,79 @@
+# MCP Contract
+
+MCP is an adapter over the exploration core. It must not duplicate local tool
+safety, endpoint handling, or result normalization.
+
+## Server Command
+
+Expected development command:
+
+```bash
+uv run repo-context mcp --transport stdio
+```
+
+## Tool: `explore_repository`
+
+Purpose: Explore a local repository using the same core as the CLI and return
+compact file-line evidence for a focused coding question.
+
+Input schema:
+
+```json
+{
+  "query": "string",
+  "repo_root": "string | null",
+  "max_turns": "integer | null",
+  "citation": "boolean | null"
+}
+```
+
+Defaults:
+
+- `repo_root`: current working directory or configured root if omitted.
+- `max_turns`: effective config default, normally `6`.
+- `citation`: `true`.
+
+Output schema:
+
+```json
+{
+  "query": "Find the request validation logic",
+  "repo_root": "/absolute/path/to/repo",
+  "answer": "src/api/validation.py:42-88",
+  "citations": [
+    {
+      "path": "src/api/validation.py",
+      "start_line": 42,
+      "end_line": 88,
+      "reason": "request validation entrypoint"
+    }
+  ],
+  "turns_used": 4,
+  "truncated": false,
+  "warnings": []
+}
+```
+
+Error schema:
+
+```json
+{
+  "error": {
+    "code": "PATH_OUTSIDE_ROOT",
+    "message": "Requested path is outside the repository root",
+    "retryable": false,
+    "details": {}
+  }
+}
+```
+
+## Deferred MCP Tools
+
+The following MCP-first tools are intentionally out of scope for the MVP:
+
+- `context_search`
+- `context_pack`
+- `context_get`
+
+They assume a ranked context endpoint contract rather than the selected
+FastContext-style exploration harness.
