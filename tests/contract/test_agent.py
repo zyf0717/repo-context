@@ -8,10 +8,10 @@ from typing import Any, cast
 import httpx
 import pytest
 
-from repo_context.agent import explore
+from repo_context.agent import _model_observation_payload, explore
 from repo_context.config import Settings
 from repo_context.llm import ChatClient
-from repo_context.types import ExploreRequest, ExplorerError
+from repo_context.types import ExploreRequest, ExplorerError, ToolObservation
 
 
 def test_mock_endpoint_drives_glob_grep_read_loop(tmp_path: Path) -> None:
@@ -72,6 +72,55 @@ def test_unsupported_tool_call_is_fatal(tmp_path: Path) -> None:
     assert exc_info.value.code == "UNSUPPORTED_TOOL_CALL"
 
 
+def test_max_turns_returns_partial_answer_when_model_provided_content(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "validation.py").write_text(
+        "def validate_request(payload):\n    return bool(payload)\n",
+        encoding="utf-8",
+    )
+    settings = Settings(base_url="http://test/v1", model="test-model", max_turns=1)
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            _tool_response(
+                "call_1",
+                "read_file",
+                {"path": "validation.py"},
+                content="validation.py contains request validation.",
+            )
+        ]
+    )
+    client = ChatClient(settings, transport=_mock_transport(responses, []))
+
+    result = explore(
+        ExploreRequest(
+            query="Find request validation",
+            repo_root=repo,
+            max_turns=1,
+        ),
+        settings,
+        client=client,
+    )
+
+    assert result.answer == "validation.py contains request validation."
+    assert result.citations[0].path == "validation.py"
+    assert result.warnings == ["max turns exceeded after partial answer"]
+
+
+def test_model_observation_payload_numbers_read_content() -> None:
+    payload = _model_observation_payload(
+        ToolObservation(
+            path="src/repo_context/types.py",
+            line_range="135-136",
+            content="def validate(self) -> None:\n    pass\n",
+        )
+    )
+
+    assert payload["content"] == "135: def validate(self) -> None:\n136:     pass\n"
+
+
 def test_trajectory_log_omits_denied_file_content(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -112,13 +161,15 @@ def _tool_response(
     call_id: str,
     name: str,
     arguments: dict[str, object],
+    *,
+    content: str | None = None,
 ) -> dict[str, object]:
     return {
         "choices": [
             {
                 "message": {
                     "role": "assistant",
-                    "content": None,
+                    "content": content,
                     "tool_calls": [
                         {
                             "id": call_id,

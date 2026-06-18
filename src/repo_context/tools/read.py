@@ -31,14 +31,17 @@ def read_file(
 
     safety = PathSafety(repo_root, tuple(ignore or ()))
     resolved = safety.resolve_existing_file(path)
+    rel_path = safety.relative_or_raw(resolved)
     first_line = start_line or 1
     last_line = end_line
     content_bytes = bytearray()
-    actual_last = first_line
+    actual_last: int | None = None
+    total_lines = 0
     truncated = False
 
     with resolved.open("rb") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
+            total_lines = line_number
             if line_number < first_line:
                 continue
             if last_line is not None and line_number > last_line:
@@ -53,10 +56,21 @@ def read_file(
             content_bytes.extend(raw_line)
             actual_last = line_number
 
+    if actual_last is None:
+        raise ExplorerError(
+            "INVALID_TOOL_ARGUMENTS",
+            "Requested start_line is beyond the end of file",
+            details={
+                "path": rel_path,
+                "start_line": first_line,
+                "total_lines": total_lines,
+            },
+        )
+
     content = content_bytes.decode("utf-8", errors="replace")
     line_range = f"{first_line}-{actual_last}"
     return ToolObservation(
-        path=safety.relative_or_raw(resolved),
+        path=rel_path,
         line_range=line_range,
         content=content,
         truncated=truncated,
