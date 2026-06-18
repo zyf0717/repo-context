@@ -38,6 +38,10 @@ Model-facing tool observations are latency bounded. Model-requested reads may
 be returned as bounded previews, but local repository safety and read byte caps
 still apply before any content is observed.
 
+Exact repository-relative citations and uniquely defined symbols may resolve
+without contacting the endpoint. Fast-path successes still emit only
+controller-validated citations and report `turns_used: 0` in JSON output.
+
 ## JSON Output
 
 ```json

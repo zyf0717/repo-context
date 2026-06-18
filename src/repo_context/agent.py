@@ -53,6 +53,19 @@ MARKDOWN_FILE_LINES_RE = re.compile(
     r"(?:\s*[-\u2013\u2014]\s*(?P<end>[1-9][0-9]*))?",
     re.IGNORECASE | re.DOTALL,
 )
+EXPLICIT_PATH_RE = re.compile(
+    r"`?(?P<path>(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+)`?"
+)
+BACKTICK_OR_QUOTE_RE = re.compile(
+    r"[`'\"](?P<token>[A-Za-z_][A-Za-z0-9_]*)[`'\"]"
+)
+EXACT_TEXT_RE = re.compile(r"[`'\"](?P<target>[^`'\"]{1,120})[`'\"]")
+TOKEN_RE = re.compile(r"\b(?P<token>[A-Za-z_][A-Za-z0-9_]*)\b")
+SEMANTIC_QUERY_RE = re.compile(
+    r"\b(why|how|compare|comparison|synthesize|interpret|explain|behavior|"
+    r"behaviour|architecture|owner|ownership|relationship|tradeoff|flow)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -70,8 +83,15 @@ def explore(
     client: ChatClient | None = None,
 ) -> ExploreResult:
     request.validate()
-    settings.require_endpoint()
     repo_root = request.repo_root.resolve()
+    fast_result = _try_exact_fast_path(
+        request,
+        repo_root=repo_root,
+        settings=settings,
+    )
+    if fast_result is not None:
+        return fast_result
+    settings.require_endpoint()
     effective_max_turns = min(request.max_turns, settings.max_turns)
     recorder = TrajectoryRecorder(settings.traj_dir, request)
     owns_client = client is None
@@ -374,6 +394,258 @@ def _citation_text(citations: list[Citation]) -> str:
     if not citations:
         return NO_CITATIONS_FOUND
     return "\n".join(citation.label() for citation in citations)
+
+
+def _try_exact_fast_path(
+    request: ExploreRequest,
+    *,
+    repo_root: Path,
+    settings: Settings,
+) -> ExploreResult | None:
+    if _is_semantic_query(request.query):
+        return None
+    evidence = EvidenceState()
+    warnings: list[str] = []
+    citations = _validated_citations_from_content(
+        request.query,
+        repo_root=repo_root,
+        settings=settings,
+        evidence=evidence,
+        warnings=warnings,
+    )
+    if citations:
+        return _finalize_result(
+            request=request,
+            repo_root=repo_root,
+            answer="",
+            citations=citations,
+            turns_used=0,
+            truncated=any(observation.truncated for observation in evidence.reads),
+            warnings=[],
+        )
+
+    explicit_path = _extract_explicit_path(request.query)
+    if explicit_path is not None:
+        target = _extract_exact_target(request.query, explicit_path)
+        if target is None:
+            return None
+        citations = _exact_matches_in_file(
+            repo_root=repo_root,
+            settings=settings,
+            path=explicit_path,
+            target=target,
+            allow_assignment=True,
+        )
+        if citations:
+            return _finalize_result(
+                request=request,
+                repo_root=repo_root,
+                answer="",
+                citations=citations,
+                turns_used=0,
+                truncated=False,
+                warnings=[],
+            )
+        return None
+
+    symbol = _extract_pathless_symbol(request.query)
+    if symbol is None:
+        return None
+    citation = _unique_definition_citation(
+        repo_root=repo_root,
+        settings=settings,
+        symbol=symbol,
+    )
+    if citation is None:
+        return None
+    return _finalize_result(
+        request=request,
+        repo_root=repo_root,
+        answer="",
+        citations=[citation],
+        turns_used=0,
+        truncated=False,
+        warnings=[],
+    )
+
+
+def _is_semantic_query(query: str) -> bool:
+    return bool(SEMANTIC_QUERY_RE.search(query))
+
+
+def _extract_explicit_path(query: str) -> str | None:
+    for match in EXPLICIT_PATH_RE.finditer(query):
+        path = match.group("path").rstrip(".,;:)")
+        if _is_repository_relative_path(path):
+            return path
+    return None
+
+
+def _extract_exact_target(query: str, explicit_path: str) -> str | None:
+    for match in EXACT_TEXT_RE.finditer(query):
+        target = match.group("target").strip()
+        if target and target != explicit_path and target != Path(explicit_path).stem:
+            return target
+    without_path = query.replace(explicit_path, " ")
+    ignored = {
+        "in",
+        "find",
+        "the",
+        "where",
+        "return",
+        "citations",
+        "only",
+        "line",
+        "lines",
+        "file",
+    }
+    tokens = [
+        match.group("token")
+        for match in TOKEN_RE.finditer(without_path)
+        if match.group("token").lower() not in ignored
+    ]
+    return tokens[-1] if len(tokens) == 1 else None
+
+
+def _extract_pathless_symbol(query: str) -> str | None:
+    for match in BACKTICK_OR_QUOTE_RE.finditer(query):
+        return match.group("token")
+    ignored = {
+        "find",
+        "the",
+        "definition",
+        "of",
+        "return",
+        "citations",
+        "only",
+        "class",
+        "function",
+        "def",
+        "symbol",
+    }
+    candidates = [
+        match.group("token")
+        for match in TOKEN_RE.finditer(query)
+        if match.group("token").lower() not in ignored
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _exact_matches_in_file(
+    *,
+    repo_root: Path,
+    settings: Settings,
+    path: str,
+    target: str,
+    allow_assignment: bool,
+) -> list[Citation]:
+    grep_result = _grep_exact_target(
+        repo_root=repo_root,
+        settings=settings,
+        target=target,
+        glob=path,
+    )
+    if grep_result.truncated:
+        return []
+    citations = _citations_for_target_hits(
+        grep_result,
+        target=target,
+        allow_assignment=allow_assignment,
+        definitions_only=False,
+    )
+    return citations if 0 < len(citations) <= MAX_FINAL_CITATIONS else []
+
+
+def _unique_definition_citation(
+    *,
+    repo_root: Path,
+    settings: Settings,
+    symbol: str,
+) -> Citation | None:
+    grep_result = _grep_exact_target(
+        repo_root=repo_root,
+        settings=settings,
+        target=symbol,
+        glob="**/*.py",
+    )
+    pyi_result = _grep_exact_target(
+        repo_root=repo_root,
+        settings=settings,
+        target=symbol,
+        glob="**/*.pyi",
+    )
+    citations = _citations_for_target_hits(
+        grep_result,
+        target=symbol,
+        allow_assignment=False,
+        definitions_only=True,
+    )
+    citations.extend(
+        _citations_for_target_hits(
+            pyi_result,
+            target=symbol,
+            allow_assignment=False,
+            definitions_only=True,
+        )
+    )
+    if grep_result.truncated or pyi_result.truncated or len(citations) > 1:
+        return None
+    return citations[0] if len(citations) == 1 else None
+
+
+def _grep_exact_target(
+    *,
+    repo_root: Path,
+    settings: Settings,
+    target: str,
+    glob: str,
+) -> ToolObservation:
+    return repo_grep(
+        repo_root=repo_root,
+        pattern=re.escape(target),
+        glob=glob,
+        max_results=MAX_FINAL_CITATIONS + 1,
+        ignore=settings.ignore,
+    )
+
+
+def _citations_for_target_hits(
+    observation: ToolObservation,
+    *,
+    target: str,
+    allow_assignment: bool,
+    definitions_only: bool,
+) -> list[Citation]:
+    citations: list[Citation] = []
+    for hit in observation.hits:
+        if _line_matches_target(
+            hit.text,
+            target=target,
+            allow_assignment=allow_assignment,
+            definitions_only=definitions_only,
+        ):
+            citations.append(Citation(hit.path, hit.line, hit.line))
+    return citations
+
+
+def _line_matches_target(
+    line: str,
+    *,
+    target: str,
+    allow_assignment: bool,
+    definitions_only: bool,
+) -> bool:
+    escaped = re.escape(target)
+    definition_pattern = (
+        rf"^\s*(?:async\s+def|def|class)\s+{escaped}\b"
+    )
+    if re.search(definition_pattern, line):
+        return True
+    if definitions_only:
+        return False
+    if allow_assignment and re.search(rf"^\s*{escaped}\s*(?::|=)", line):
+        return True
+    return bool(re.search(rf"\b{escaped}\b", line))
 
 
 def _validated_citations_from_content(

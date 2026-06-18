@@ -14,7 +14,8 @@ chat-completions client, optional trajectory logging, and a thin MCP adapter.
 It also includes spec `002` hardening for deterministic controller-owned
 finalization and citation-mode rendering, plus spec `003` latency controls for
 bounded endpoint prompt growth, and spec `004` same-turn parallel local tool
-execution.
+execution. Spec `005` adds a deterministic exact path/symbol fast path for
+trivial evidence lookups.
 
 Primary planning artifacts:
 
@@ -24,6 +25,7 @@ Primary planning artifacts:
 - [Deterministic explorer harness](specs/002-deterministic-explorer-harness/spec.md)
 - [Latency-bounded explorer harness](specs/003-latency-bounded-explorer-harness/spec.md)
 - [FastContext-compatible parallel tool executor](specs/004-fastcontext-parallel-tool-executor/spec.md)
+- [Exact path/symbol fast path](specs/005-exact-path-symbol-fast-path/spec.md)
 - [Implementation order](docs/implementation-order.md)
 
 ## FastContext Alignment
@@ -79,6 +81,9 @@ model-observation payloads, model-requested read spans, completion tokens, and
 temperature to reduce latency variance. Independent same-turn local tool calls
 execute concurrently with a default worker cap of `4`; model endpoint requests
 remain serial.
+
+Exact path or uniquely defined symbol queries can complete locally without an
+endpoint when the controller can validate the citation deterministically.
 
 Configuration precedence:
 

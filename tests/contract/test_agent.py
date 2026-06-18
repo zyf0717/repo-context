@@ -16,6 +16,234 @@ from repo_context.llm import ChatClient
 from repo_context.types import ExploreRequest, ExplorerError, ToolCall, ToolObservation
 
 
+def test_exact_citation_fast_path_skips_endpoint_config(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "agent.py").write_text("line 1\nline 2\n", encoding="utf-8")
+    settings = Settings()
+
+    result = explore(
+        ExploreRequest(query="Use agent.py:1-2", repo_root=repo),
+        settings,
+    )
+
+    assert result.turns_used == 0
+    assert result.answer == "agent.py:1-2"
+    assert [citation.label() for citation in result.citations] == ["agent.py:1-2"]
+
+
+def test_explicit_path_symbol_fast_path_returns_matching_line(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "config.py").write_text(
+        "class Settings:\n"
+        "    max_parallel_tools: int = 4\n",
+        encoding="utf-8",
+    )
+    settings = Settings()
+
+    result = explore(
+        ExploreRequest(
+            query="In src/config.py, find `max_parallel_tools`.",
+            repo_root=repo,
+        ),
+        settings,
+    )
+
+    assert result.turns_used == 0
+    assert result.answer == "src/config.py:2"
+
+
+def test_explicit_path_symbol_fast_path_ignores_sentence_punctuation(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "llm.py").write_text(
+        '"tool_choice": "auto",\n',
+        encoding="utf-8",
+    )
+    settings = Settings()
+
+    result = explore(
+        ExploreRequest(
+            query='Find "tool_choice" in src/llm.py.',
+            repo_root=repo,
+        ),
+        settings,
+    )
+
+    assert result.turns_used == 0
+    assert result.answer == "src/llm.py:1"
+
+
+def test_pathless_unique_definition_fast_path_skips_endpoint(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "agent.py").write_text(
+        "def explore():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    settings = Settings()
+
+    result = explore(
+        ExploreRequest(query="Find `explore`", repo_root=repo),
+        settings,
+    )
+
+    assert result.turns_used == 0
+    assert result.answer == "src/agent.py:1"
+
+
+def test_pathless_assignment_match_falls_back_to_model_loop(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "config.py").write_text("max_parallel_tools = 4\n", encoding="utf-8")
+    responses: Iterator[dict[str, object]] = iter(
+        [_message_response("NO_CITATIONS_FOUND")]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+
+    result = explore(
+        ExploreRequest(query="Find `max_parallel_tools`", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert result.turns_used == 1
+    assert result.answer == "NO_CITATIONS_FOUND"
+    assert len(seen_payloads) == 1
+
+
+def test_multiple_pathless_definitions_fall_back_to_model_loop(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / "a").mkdir(parents=True)
+    (repo / "b").mkdir(parents=True)
+    (repo / "a" / "agent.py").write_text("def explore():\n    pass\n", encoding="utf-8")
+    (repo / "b" / "agent.py").write_text("def explore():\n    pass\n", encoding="utf-8")
+    responses: Iterator[dict[str, object]] = iter(
+        [_message_response("NO_CITATIONS_FOUND")]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+
+    result = explore(
+        ExploreRequest(query="Find `explore`", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert result.turns_used == 1
+    assert result.answer == "NO_CITATIONS_FOUND"
+    assert len(seen_payloads) == 1
+
+
+def test_pathless_definition_in_markdown_does_not_fast_path(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "spec.md").write_text(
+        "```python\n"
+        "def explore():\n"
+        "    pass\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    responses: Iterator[dict[str, object]] = iter(
+        [_message_response("NO_CITATIONS_FOUND")]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+
+    result = explore(
+        ExploreRequest(query="Find `explore`", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert result.turns_used == 1
+    assert result.answer == "NO_CITATIONS_FOUND"
+    assert len(seen_payloads) == 1
+
+
+def test_semantic_query_with_exact_symbol_falls_back_to_model_loop(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "agent.py").write_text("def explore():\n    pass\n", encoding="utf-8")
+    responses: Iterator[dict[str, object]] = iter(
+        [_message_response("NO_CITATIONS_FOUND")]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+
+    result = explore(
+        ExploreRequest(query="How does `explore` work?", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert result.turns_used == 1
+    assert result.answer == "NO_CITATIONS_FOUND"
+    assert len(seen_payloads) == 1
+
+
+def test_denied_explicit_path_does_not_fast_path_or_leak_content(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".env").write_text("SECRET=1\n", encoding="utf-8")
+    responses: Iterator[dict[str, object]] = iter(
+        [_message_response("NO_CITATIONS_FOUND")]
+    )
+    seen_payloads: list[dict[str, object]] = []
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, seen_payloads))
+
+    result = explore(
+        ExploreRequest(query="Find `SECRET` in .env", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert result.turns_used == 1
+    assert result.answer == "NO_CITATIONS_FOUND"
+    assert "SECRET=1" not in json.dumps(seen_payloads)
+
+
+def test_fallback_without_endpoint_still_requires_endpoint(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    settings = Settings()
+
+    with pytest.raises(ExplorerError) as exc_info:
+        explore(
+            ExploreRequest(query="Find missing_symbol", repo_root=repo),
+            settings,
+        )
+
+    assert exc_info.value.code == "CONFIG_MISSING_ENDPOINT"
+
+
 def test_mock_endpoint_drives_glob_grep_read_loop(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "src" / "api").mkdir(parents=True)

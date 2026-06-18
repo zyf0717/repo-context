@@ -46,7 +46,9 @@ Implement the FastContext-style harness around the local tools. Spec
 finalization and citation validation. Spec `003-latency-bounded-explorer-harness`
 adds endpoint latency controls and bounded model observations. Spec
 `004-fastcontext-parallel-tool-executor` aligns local execution with
-FastContext same-turn parallel tool-call behavior.
+FastContext same-turn parallel tool-call behavior. Spec
+`005-exact-path-symbol-fast-path` adds endpoint-free deterministic short-circuit
+behavior for exact trivial evidence lookups.
 
 - Send the user query, tool schemas, and bounded observations to the configured
   OpenAI-compatible chat completion endpoint.
@@ -61,6 +63,8 @@ FastContext same-turn parallel tool-call behavior.
   limits, and deterministic early finalization from narrow evidence.
 - Execute same-turn model tool calls concurrently while preserving deterministic
   observation order in the transcript.
+- Short-circuit exact path/citation and uniquely defined symbol lookups before
+  endpoint configuration is required.
 
 Exit criteria:
 
@@ -68,6 +72,8 @@ Exit criteria:
   paths without touching real external services.
 - Mocked parallel tool-call tests preserve transcript order and prove repeated
   calls stop before scheduling tool work.
+- Fast-path tests prove exact evidence can return `turns_used=0` without
+  endpoint access and ambiguous or semantic queries still fall back.
 
 ## 4. CLI MVP
 

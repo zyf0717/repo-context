@@ -1,6 +1,6 @@
 # Spec 005: Exact Path/Symbol Fast Path
 
-Status: planned
+Status: implemented
 
 Extends: `004-fastcontext-parallel-tool-executor`
 
@@ -74,7 +74,8 @@ the final citation cap.
 
 If the query contains an exact symbol but no explicit path:
 
-- scan safe text files only;
+- scan safe files only, with v1 pathless definition eligibility limited to
+  Python source files;
 - short-circuit only if exactly one high-confidence definition-pattern match
   exists across the repository;
 - pathless assignment/config-style matches do not short-circuit in v1;
@@ -107,7 +108,7 @@ is optional only when the exact fast path succeeds.
 
 ## Implementation Notes
 
-Add a private helper in `agent.py`:
+The implementation adds a private helper in `agent.py`:
 
 ```python
 def _try_exact_fast_path(
@@ -136,13 +137,12 @@ The helper should:
 - No semantic search or local ranking.
 - No embeddings, vector store, or context-pack output.
 - No new CLI or MCP arguments.
-- No README or broad user-doc update until implementation lands.
 - No pathless assignment/config short-circuit in v1.
 - No explanation generation in the fast path.
 
 ## Coverage
 
-Implementation should add tests for:
+Regression tests cover:
 
 - explicit `path:start-end` query returns `turns_used=0` and does not call the
   endpoint;

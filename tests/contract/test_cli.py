@@ -90,3 +90,56 @@ def test_cli_missing_endpoint_is_configuration_error(
     assert code == 3
     assert "CONFIG_MISSING_ENDPOINT" in captured.err
 
+
+def test_cli_exact_fast_path_text_without_endpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    for key in ("FASTCONTEXT_BASE_URL", "FASTCONTEXT_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "agent.py").write_text("def explore():\n    pass\n", encoding="utf-8")
+
+    code = cli.main(
+        [
+            "explore",
+            "--query",
+            "Find `explore`",
+            "--repo",
+            str(repo),
+        ]
+    )
+
+    assert code == 0
+    assert capsys.readouterr().out.strip() == "agent.py:1"
+
+
+def test_cli_exact_fast_path_json_reports_zero_turns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    for key in ("FASTCONTEXT_BASE_URL", "FASTCONTEXT_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "agent.py").write_text("def explore():\n    pass\n", encoding="utf-8")
+
+    code = cli.main(
+        [
+            "explore",
+            "--query",
+            "Find `explore`",
+            "--repo",
+            str(repo),
+            "--format",
+            "json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["answer"] == "agent.py:1"
+    assert payload["turns_used"] == 0
