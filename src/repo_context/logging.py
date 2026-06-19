@@ -57,7 +57,11 @@ class TrajectoryRecorder:
     ) -> None:
         if self._traj_dir is None:
             return
-        self._data["result"] = result.to_dict() if result is not None else None
+        self._data["result"] = (
+            result.to_dict(include_raw_location_text=False)
+            if result is not None
+            else None
+        )
         self._data["error"] = error.to_dict() if error is not None else None
         self._traj_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S")

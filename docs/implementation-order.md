@@ -48,7 +48,9 @@ adds endpoint latency controls and bounded model observations. Spec
 `004-fastcontext-parallel-tool-executor` aligns local execution with
 FastContext same-turn parallel tool-call behavior. Spec
 `005-exact-path-symbol-fast-path` adds endpoint-free deterministic short-circuit
-behavior for exact trivial evidence lookups.
+behavior for exact trivial evidence lookups. Spec
+`007-raw-location-payload` adds merged final citation ranges plus raw source
+snippets in JSON-compatible output.
 
 - Send the user query, tool schemas, and bounded observations to the configured
   OpenAI-compatible chat completion endpoint.
@@ -65,6 +67,8 @@ behavior for exact trivial evidence lookups.
   observation order in the transcript.
 - Short-circuit exact path/citation and uniquely defined symbol lookups before
   endpoint configuration is required.
+- Merge overlapping or adjacent final citation ranges and attach raw source
+  snippets to structured output without changing citation-mode text output.
 
 Exit criteria:
 

@@ -16,7 +16,8 @@ finalization and citation-mode rendering, plus spec `003` latency controls for
 bounded endpoint prompt growth, and spec `004` same-turn parallel local tool
 execution. Spec `005` adds a deterministic exact path/symbol fast path for
 trivial evidence lookups. Spec `006` fixes configuration ownership to
-project-root `config.yaml` plus `.env`/environment overrides.
+project-root `config.yaml` plus `.env`/environment overrides. Spec `007` adds
+raw source snippets for validated, merged citation ranges.
 
 Primary planning artifacts:
 
@@ -28,6 +29,7 @@ Primary planning artifacts:
 - [FastContext-compatible parallel tool executor](specs/004-fastcontext-parallel-tool-executor/spec.md)
 - [Exact path/symbol fast path](specs/005-exact-path-symbol-fast-path/spec.md)
 - [Project-root YAML and env configuration](specs/006-project-root-yaml-dotenv-config/spec.md)
+- [Raw location evidence with merged ranges](specs/007-raw-location-payload/spec.md)
 - [Implementation order](docs/implementation-order.md)
 
 ## FastContext Alignment
@@ -67,6 +69,10 @@ cp config.yaml.example config.yaml
 The inspected repository's config files are not loaded implicitly. This keeps
 the explorer's operator config independent of whatever target folder is being
 read.
+
+Relative paths in `config.yaml`, including `explorer.traj_dir`, resolve from
+the `repo-context` project root. Environment path overrides are used as
+provided.
 
 Use project-root `.env` or process environment variables for local overrides,
 CI, or secrets:

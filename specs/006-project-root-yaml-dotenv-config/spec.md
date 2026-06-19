@@ -20,6 +20,9 @@ that YAML config. There is no public `--config` option, no
 - The loader MUST NOT inspect the target folder for `config.yaml`,
   `.repo-context.yaml`, `.repo-context.toml`, `.env`, or any other config file.
 - The loader MUST NOT inspect the caller's current working directory for config.
+- Relative paths in `config.yaml` MUST resolve from the `repo-context` project
+  root.
+- Environment path overrides MUST be used as supplied.
 - The CLI and MCP server MUST NOT expose `--config`.
 - `REPO_CONTEXT_CONFIG` MUST NOT be recognized.
 - YAML parse errors and invalid `.env` lines MUST return `CONFIG_INVALID`

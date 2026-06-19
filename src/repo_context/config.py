@@ -72,7 +72,7 @@ def load_settings(
     project_root = _project_root()
     yaml_path = _default_config_path(project_root)
     if yaml_path is not None:
-        settings = _apply_yaml(settings, yaml_path)
+        settings = _apply_yaml(settings, yaml_path, project_root=project_root)
     settings = _apply_env(settings, _load_dotenv(project_root / PROJECT_ENV_NAME))
     settings = _apply_env(settings, os.environ)
     if overrides is not None:
@@ -130,7 +130,7 @@ def _parse_env_value(value: str) -> str:
     return value
 
 
-def _apply_yaml(settings: Settings, path: Path) -> Settings:
+def _apply_yaml(settings: Settings, path: Path, *, project_root: Path) -> Settings:
     try:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
@@ -149,6 +149,7 @@ def _apply_yaml(settings: Settings, path: Path) -> Settings:
     model = _section(data, "model")
     explorer = _section(data, "explorer")
     tools = _section(data, "tools")
+    traj_dir = explorer.get("traj_dir", settings.traj_dir) or data.get("traj_dir")
 
     return replace(
         settings,
@@ -189,11 +190,8 @@ def _apply_yaml(settings: Settings, path: Path) -> Settings:
             model.get("temperature", settings.temperature),
             "temperature",
         ),
-        traj_dir=_optional_path(
-            explorer.get("traj_dir", settings.traj_dir)
-            or data.get("traj_dir")
-            or settings.traj_dir
-        ),
+        traj_dir=_optional_project_path(traj_dir, project_root=project_root)
+        or settings.traj_dir,
         ignore=_str_list(explorer.get("ignore", settings.ignore), "ignore"),
     )
 
@@ -375,6 +373,13 @@ def _optional_path(value: object) -> Path | None:
     if value is None or value == "":
         return None
     return Path(str(value))
+
+
+def _optional_project_path(value: object, *, project_root: Path) -> Path | None:
+    path = _optional_path(value)
+    if path is None or path.is_absolute():
+        return path
+    return project_root / path
 
 
 def _str_list(value: object, name: str) -> list[str]:

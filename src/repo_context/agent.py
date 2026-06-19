@@ -16,6 +16,7 @@ from repo_context.types import (
     ExploreRequest,
     ExplorerError,
     ExploreResult,
+    RawLocation,
     ToolCall,
     ToolObservation,
 )
@@ -134,6 +135,7 @@ def explore(
                     result = _finalize_result(
                         request=request,
                         repo_root=repo_root,
+                        settings=settings,
                         answer=content_text,
                         citations=citations,
                         turns_used=turn,
@@ -154,6 +156,7 @@ def explore(
                 result = _finalize_result(
                     request=request,
                     repo_root=repo_root,
+                    settings=settings,
                     answer=content_text,
                     citations=citations,
                     turns_used=turn,
@@ -176,6 +179,7 @@ def explore(
                 result = _finalize_result(
                     request=request,
                     repo_root=repo_root,
+                    settings=settings,
                     answer=last_content,
                     citations=_best_current_citations(evidence),
                     turns_used=turn,
@@ -196,6 +200,7 @@ def explore(
                 result = _finalize_result(
                     request=request,
                     repo_root=repo_root,
+                    settings=settings,
                     answer=last_content,
                     citations=citations,
                     turns_used=turn,
@@ -258,6 +263,7 @@ def explore(
             result = _finalize_result(
                 request=request,
                 repo_root=repo_root,
+                settings=settings,
                 answer=last_content,
                 citations=citations,
                 turns_used=effective_max_turns,
@@ -271,6 +277,7 @@ def explore(
         result = _finalize_result(
             request=request,
             repo_root=repo_root,
+            settings=settings,
             answer="",
             citations=citations,
             turns_used=effective_max_turns,
@@ -371,19 +378,28 @@ def _finalize_result(
     *,
     request: ExploreRequest,
     repo_root: Path,
+    settings: Settings,
     answer: str,
     citations: list[Citation],
     turns_used: int,
     truncated: bool,
     warnings: list[str],
 ) -> ExploreResult:
+    citations = _merge_adjacent_citations(citations)[:MAX_FINAL_CITATIONS]
     if request.citation or (not answer and citations):
         answer = _citation_text(citations)
+    raw_locations = _extract_raw_locations(
+        citations,
+        repo_root=repo_root,
+        settings=settings,
+        warnings=warnings,
+    )
     return ExploreResult(
         query=request.query,
         repo_root=str(repo_root),
         answer=answer,
         citations=citations,
+        raw_locations=raw_locations,
         turns_used=turns_used,
         truncated=truncated,
         warnings=warnings,
@@ -394,6 +410,116 @@ def _citation_text(citations: list[Citation]) -> str:
     if not citations:
         return NO_CITATIONS_FOUND
     return "\n".join(citation.label() for citation in citations)
+
+
+def _merge_adjacent_citations(citations: list[Citation]) -> list[Citation]:
+    grouped: dict[str, list[tuple[int, Citation]]] = {}
+    path_order: list[str] = []
+    non_mergeable: list[Citation] = []
+    for index, citation in enumerate(citations):
+        if citation.start_line is None or citation.end_line is None:
+            non_mergeable.append(citation)
+            continue
+        if citation.path not in grouped:
+            grouped[citation.path] = []
+            path_order.append(citation.path)
+        grouped[citation.path].append((index, citation))
+
+    merged: list[Citation] = []
+    for path in path_order:
+        ranges = sorted(
+            grouped[path],
+            key=lambda item: (
+                item[1].start_line or 0,
+                item[1].end_line or 0,
+            ),
+        )
+        current_start: int | None = None
+        current_end: int | None = None
+        current_reason: str | None = None
+        current_reason_index: int | None = None
+
+        for index, citation in ranges:
+            start = citation.start_line
+            end = citation.end_line
+            if start is None or end is None:
+                continue
+            if current_start is None or current_end is None:
+                current_start = start
+                current_end = end
+                current_reason = citation.reason
+                current_reason_index = index if citation.reason else None
+                continue
+
+            if start <= current_end + 1:
+                current_end = max(current_end, end)
+                if citation.reason and (
+                    current_reason_index is None or index < current_reason_index
+                ):
+                    current_reason = citation.reason
+                    current_reason_index = index
+                continue
+
+            merged.append(
+                Citation(path, current_start, current_end, current_reason)
+            )
+            current_start = start
+            current_end = end
+            current_reason = citation.reason
+            current_reason_index = index if citation.reason else None
+
+        if current_start is not None and current_end is not None:
+            merged.append(Citation(path, current_start, current_end, current_reason))
+
+    merged.extend(non_mergeable)
+    return merged
+
+
+def _extract_raw_locations(
+    citations: list[Citation],
+    *,
+    repo_root: Path,
+    settings: Settings,
+    warnings: list[str],
+) -> list[RawLocation]:
+    raw_locations: list[RawLocation] = []
+    for citation in citations:
+        if citation.start_line is None or citation.end_line is None:
+            _append_warning_once(warnings, "raw location missing line range")
+            continue
+        try:
+            observation = read_file(
+                repo_root=repo_root,
+                path=citation.path,
+                start_line=citation.start_line,
+                end_line=citation.end_line,
+                max_bytes=settings.max_read_bytes,
+                ignore=settings.ignore,
+            )
+        except ExplorerError:
+            _append_warning_once(warnings, "raw location could not be read")
+            continue
+        start, end = _parse_line_range(observation.line_range or "")
+        if (
+            observation.path is None
+            or observation.content is None
+            or start is None
+            or end is None
+        ):
+            _append_warning_once(warnings, "raw location could not be read")
+            continue
+        if observation.truncated:
+            _append_warning_once(warnings, "raw location truncated")
+        raw_locations.append(
+            RawLocation(
+                path=observation.path,
+                start_line=start,
+                end_line=end,
+                text=observation.content,
+                truncated=observation.truncated,
+            )
+        )
+    return raw_locations
 
 
 def _try_exact_fast_path(
@@ -417,6 +543,7 @@ def _try_exact_fast_path(
         return _finalize_result(
             request=request,
             repo_root=repo_root,
+            settings=settings,
             answer="",
             citations=citations,
             turns_used=0,
@@ -440,6 +567,7 @@ def _try_exact_fast_path(
             return _finalize_result(
                 request=request,
                 repo_root=repo_root,
+                settings=settings,
                 answer="",
                 citations=citations,
                 turns_used=0,
@@ -461,6 +589,7 @@ def _try_exact_fast_path(
     return _finalize_result(
         request=request,
         repo_root=repo_root,
+        settings=settings,
         answer="",
         citations=[citation],
         turns_used=0,
@@ -693,7 +822,9 @@ def _validate_citations(
         )
         if verified is not None:
             validated.append(verified)
-    return _dedupe_citations(validated)[:MAX_FINAL_CITATIONS]
+    return _merge_adjacent_citations(_dedupe_citations(validated))[
+        :MAX_FINAL_CITATIONS
+    ]
 
 
 def _normalize_citation(citation: Citation) -> Citation | None:

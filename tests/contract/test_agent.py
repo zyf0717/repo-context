@@ -13,7 +13,14 @@ import repo_context.agent as agent_module
 from repo_context.agent import _model_observation_payload, explore, format_text_result
 from repo_context.config import Settings
 from repo_context.llm import ChatClient
-from repo_context.types import ExploreRequest, ExplorerError, ToolCall, ToolObservation
+from repo_context.types import (
+    Citation,
+    ExploreRequest,
+    ExplorerError,
+    RawLocation,
+    ToolCall,
+    ToolObservation,
+)
 
 
 def test_exact_citation_fast_path_skips_endpoint_config(tmp_path: Path) -> None:
@@ -30,6 +37,9 @@ def test_exact_citation_fast_path_skips_endpoint_config(tmp_path: Path) -> None:
     assert result.turns_used == 0
     assert result.answer == "agent.py:1-2"
     assert [citation.label() for citation in result.citations] == ["agent.py:1-2"]
+    assert result.raw_locations == [
+        RawLocation("agent.py", 1, 2, "line 1\nline 2\n")
+    ]
 
 
 def test_explicit_path_symbol_fast_path_returns_matching_line(
@@ -737,7 +747,10 @@ def test_final_prose_without_citations_uses_best_read_evidence(tmp_path: Path) -
         client=client,
     )
 
-    assert result.answer.splitlines()[0] == "src/repo_context/agent.py:352-365"
+    assert result.answer.splitlines() == [
+        "src/repo_context/agent.py:1-120",
+        "src/repo_context/agent.py:352-365",
+    ]
     assert "final answer did not include valid citations" in result.warnings
 
 
@@ -807,6 +820,79 @@ def test_citation_prompt_uses_final_answer_block_and_normalizes_output(
     assert [citation.label() for citation in result.citations] == [
         "src/api/validation.py:1-2"
     ]
+
+
+def test_final_citations_merge_and_raw_locations_use_merged_range(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text(
+        "".join(f"line {line}\n" for line in range(1, 11)),
+        encoding="utf-8",
+    )
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            _message_response(
+                "<final_answer>\n"
+                "a.py:1-3\n"
+                "a.py:4-8\n"
+                "a.py:7-10\n"
+                "</final_answer>"
+            )
+        ]
+    )
+    settings = Settings(base_url="http://test/v1", model="test-model")
+    client = ChatClient(settings, transport=_mock_transport(responses, []))
+
+    result = explore(
+        ExploreRequest(query="Find lines", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    assert result.answer == "a.py:1-10"
+    assert [citation.label() for citation in result.citations] == ["a.py:1-10"]
+    assert result.raw_locations == [
+        RawLocation(
+            path="a.py",
+            start_line=1,
+            end_line=10,
+            text="".join(f"line {line}\n" for line in range(1, 11)),
+        )
+    ]
+
+
+def test_raw_location_truncation_is_reported(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "big.py").write_text("abcdef\n", encoding="utf-8")
+    settings = Settings(max_read_bytes=3)
+
+    result = explore(ExploreRequest(query="Use big.py:1", repo_root=repo), settings)
+
+    assert result.answer == "big.py:1"
+    assert result.raw_locations == [
+        RawLocation("big.py", 1, 1, "abc", truncated=True)
+    ]
+    assert "raw location truncated" in result.warnings
+
+
+def test_unreadable_raw_location_is_omitted_with_warning(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".env").write_text("SECRET_TOKEN=abc\n", encoding="utf-8")
+    warnings: list[str] = []
+
+    raw_locations = agent_module._extract_raw_locations(
+        [Citation(".env", 1, 1)],
+        repo_root=repo,
+        settings=Settings(),
+        warnings=warnings,
+    )
+
+    assert raw_locations == []
+    assert warnings == ["raw location could not be read"]
 
 
 def test_hallucinated_citation_is_rejected(tmp_path: Path) -> None:
@@ -947,6 +1033,34 @@ def test_trajectory_log_omits_denied_file_content(tmp_path: Path) -> None:
     logs = list(traj_dir.glob("*.json"))
     assert len(logs) == 1
     assert "SECRET_TOKEN" not in logs[0].read_text(encoding="utf-8")
+
+
+def test_trajectory_log_omits_raw_location_text(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "answer.py").write_text("RAW_LOCATION_SECRET\n", encoding="utf-8")
+    traj_dir = tmp_path / "traj"
+    settings = Settings(
+        base_url="http://test/v1",
+        model="test-model",
+        traj_dir=traj_dir,
+    )
+    responses: Iterator[dict[str, object]] = iter(
+        [_message_response("answer.py:1")]
+    )
+    client = ChatClient(settings, transport=_mock_transport(responses, []))
+
+    explore(
+        ExploreRequest(query="find answer", repo_root=repo),
+        settings,
+        client=client,
+    )
+
+    logs = list(traj_dir.glob("*.json"))
+    assert len(logs) == 1
+    content = logs[0].read_text(encoding="utf-8")
+    assert "RAW_LOCATION_SECRET" not in content
+    assert "text_length" in content
 
 
 def _mock_transport(

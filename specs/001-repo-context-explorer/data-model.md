@@ -17,7 +17,9 @@ Fields:
 - `max_turns: int`: Maximum model/tool iterations; default `6`.
 - `max_read_bytes: int`: Per-read content cap; default `12000`.
 - `max_grep_results: int`: Grep hit cap; default `50`.
-- `traj_dir: Path | None`: Optional run log directory.
+- `traj_dir: Path | None`: Optional run log directory. Relative paths from
+  `config.yaml` resolve from the `repo-context` project root; env overrides are
+  used as supplied.
 - `ignore: list[str]`: Directory/file patterns to exclude.
 - `timeout_seconds: float`: Endpoint request timeout; default `120`.
 - `max_observation_chars: int`: Max content chars sent back to the model in a
@@ -143,6 +145,7 @@ Fields:
 - `repo_root: str`
 - `answer: str`
 - `citations: list[Citation]`
+- `raw_locations: list[RawLocation]`
 - `turns_used: int`
 - `truncated: bool`
 - `warnings: list[str]`
@@ -151,6 +154,24 @@ Rules:
 
 - Text output defaults to citation-first formatting.
 - JSON output preserves all fields.
+
+## RawLocation
+
+Controller-read source text for a final citation range.
+
+Fields:
+
+- `path: str`
+- `start_line: int`
+- `end_line: int`
+- `text: str`
+- `truncated: bool`
+
+Rules:
+
+- Paths are repository-relative.
+- Text is read only after citation validation and merged-range normalization.
+- Trajectory logs must omit raw `text`.
 
 ## Trajectory
 

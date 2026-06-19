@@ -28,6 +28,10 @@ The inspected repository's config files are not loaded implicitly. This keeps
 the explorer's operator config independent of whatever target folder is being
 read.
 
+Relative paths in `config.yaml`, including `explorer.traj_dir`, resolve from
+the `repo-context` project root. Environment path overrides are used as
+provided.
+
 Use project-root `.env` or process environment variables for overrides:
 
 ```bash

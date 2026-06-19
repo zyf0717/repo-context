@@ -14,7 +14,7 @@ from repo_context.agent import explore
 from repo_context.config import Settings
 from repo_context.llm import ChatClient
 from repo_context.mcp_server import explore_repository_handler
-from repo_context.types import Citation, ExploreRequest, ExploreResult
+from repo_context.types import Citation, ExploreRequest, ExploreResult, RawLocation
 
 
 def test_mcp_handler_delegates_to_core(tmp_path: Path) -> None:
@@ -29,6 +29,9 @@ def test_mcp_handler_delegates_to_core(tmp_path: Path) -> None:
             repo_root=str(tmp_path),
             answer="src/api/validation.py:1",
             citations=[Citation("src/api/validation.py", 1, 1)],
+            raw_locations=[
+                RawLocation("src/api/validation.py", 1, 1, "def validate():\n")
+            ],
             turns_used=1,
         )
 
@@ -50,6 +53,15 @@ def test_mcp_handler_delegates_to_core(tmp_path: Path) -> None:
             "start_line": 1,
             "end_line": 1,
             "reason": None,
+        }
+    ]
+    assert result["raw_locations"] == [
+        {
+            "path": "src/api/validation.py",
+            "start_line": 1,
+            "end_line": 1,
+            "text": "def validate():\n",
+            "truncated": False,
         }
     ]
 
@@ -158,6 +170,15 @@ def test_mcp_handler_returns_core_normalized_citation_result(
             "start_line": 1,
             "end_line": 2,
             "reason": None,
+        }
+    ]
+    assert result["raw_locations"] == [
+        {
+            "path": "src/api/validation.py",
+            "start_line": 1,
+            "end_line": 2,
+            "text": "def validate_request(payload):\n    return bool(payload)\n",
+            "truncated": False,
         }
     ]
 

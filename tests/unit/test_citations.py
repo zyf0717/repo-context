@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from repo_context.agent import extract_citations
+from repo_context.agent import _merge_adjacent_citations, extract_citations
+from repo_context.types import Citation
 
 
 def test_extract_colon_range_citation() -> None:
@@ -40,3 +41,33 @@ def test_extract_markdown_file_lines_citation() -> None:
     assert citations[0].path == "src/repo_context/types.py"
     assert citations[0].start_line == 125
     assert citations[0].end_line == 140
+
+
+def test_merge_adjacent_citations_merges_overlapping_and_adjacent_ranges() -> None:
+    citations = _merge_adjacent_citations(
+        [
+            Citation("a.py", 7, 10, reason="third"),
+            Citation("a.py", 1, 3, reason=None),
+            Citation("a.py", 4, 8, reason="first"),
+        ]
+    )
+
+    assert citations == [Citation("a.py", 1, 10, reason="third")]
+
+
+def test_merge_adjacent_citations_keeps_disjoint_and_cross_file_ranges() -> None:
+    citations = _merge_adjacent_citations(
+        [
+            Citation("b.py", 20, 21),
+            Citation("a.py", 5, 6),
+            Citation("b.py", 1, 2),
+            Citation("a.py", 8, 9),
+        ]
+    )
+
+    assert citations == [
+        Citation("b.py", 1, 2),
+        Citation("b.py", 20, 21),
+        Citation("a.py", 5, 6),
+        Citation("a.py", 8, 9),
+    ]

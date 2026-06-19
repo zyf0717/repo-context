@@ -66,6 +66,28 @@ class Citation:
 
 
 @dataclass(frozen=True, slots=True)
+class RawLocation:
+    path: str
+    start_line: int
+    end_line: int
+    text: str
+    truncated: bool = False
+
+    def to_dict(self, *, include_text: bool = True) -> dict[str, object]:
+        data: dict[str, object] = {
+            "path": self.path,
+            "start_line": self.start_line,
+            "end_line": self.end_line,
+            "truncated": self.truncated,
+        }
+        if include_text:
+            data["text"] = self.text
+        else:
+            data["text_length"] = len(self.text)
+        return data
+
+
+@dataclass(frozen=True, slots=True)
 class SearchHit:
     path: str
     line: int
@@ -165,15 +187,20 @@ class ExploreResult:
     answer: str
     citations: list[Citation]
     turns_used: int
+    raw_locations: list[RawLocation] = field(default_factory=list)
     truncated: bool = False
     warnings: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, *, include_raw_location_text: bool = True) -> dict[str, object]:
         return {
             "query": self.query,
             "repo_root": self.repo_root,
             "answer": self.answer,
             "citations": [citation.to_dict() for citation in self.citations],
+            "raw_locations": [
+                raw_location.to_dict(include_text=include_raw_location_text)
+                for raw_location in self.raw_locations
+            ],
             "turns_used": self.turns_used,
             "truncated": self.truncated,
             "warnings": self.warnings,
@@ -181,4 +208,3 @@ class ExploreResult:
 
 
 JsonObject = dict[str, Any]
-

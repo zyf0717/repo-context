@@ -52,6 +52,15 @@ Output schema:
       "reason": "request validation entrypoint"
     }
   ],
+  "raw_locations": [
+    {
+      "path": "src/api/validation.py",
+      "start_line": 42,
+      "end_line": 88,
+      "text": "def validate_request(payload):\n    ...\n",
+      "truncated": false
+    }
+  ],
   "turns_used": 4,
   "truncated": false,
   "warnings": []

@@ -175,6 +175,52 @@ model:
     assert settings.model == ""
 
 
+def test_yaml_traj_dir_is_project_root_relative_from_external_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _clear_config_env(monkeypatch, project_root)
+    repo = tmp_path / "target"
+    repo.mkdir()
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    (project_root / "config.yaml").write_text(
+        """
+explorer:
+  traj_dir: ".fastcontext"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(caller)
+
+    settings = load_settings(repo_root=repo)
+
+    assert settings.traj_dir == project_root / ".fastcontext"
+
+
+def test_env_traj_dir_override_is_used_as_supplied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _clear_config_env(monkeypatch, project_root)
+    (project_root / "config.yaml").write_text(
+        """
+explorer:
+  traj_dir: ".fastcontext"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FASTCONTEXT_TRAJ_DIR", "env-traj")
+
+    settings = load_settings(repo_root=tmp_path / "target")
+
+    assert settings.traj_dir == Path("env-traj")
+
+
 def test_project_root_env_supports_quotes_comments_and_export(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

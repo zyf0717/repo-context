@@ -9,7 +9,7 @@ import pytest
 from repo_context import cli
 from repo_context import config as config_module
 from repo_context.config import Settings
-from repo_context.types import Citation, ExploreRequest, ExploreResult
+from repo_context.types import Citation, ExploreRequest, ExploreResult, RawLocation
 
 
 @pytest.fixture(autouse=True)
@@ -69,6 +69,9 @@ def test_cli_json_output_shape(
             repo_root=str(repo),
             answer="src/api/validation.py:1",
             citations=[Citation("src/api/validation.py", 1, 1)],
+            raw_locations=[
+                RawLocation("src/api/validation.py", 1, 1, "def validate():\n")
+            ],
             turns_used=1,
         )
 
@@ -90,6 +93,15 @@ def test_cli_json_output_shape(
     assert code == 0
     assert payload["query"] == "Find validation"
     assert payload["citations"][0]["path"] == "src/api/validation.py"
+    assert payload["raw_locations"] == [
+        {
+            "path": "src/api/validation.py",
+            "start_line": 1,
+            "end_line": 1,
+            "text": "def validate():\n",
+            "truncated": False,
+        }
+    ]
 
 
 def test_cli_missing_endpoint_is_configuration_error(
