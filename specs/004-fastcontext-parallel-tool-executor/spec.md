@@ -66,11 +66,11 @@ One tool-execution concurrency setting controls local tool parallelism:
 FASTCONTEXT_MAX_PARALLEL_TOOLS=4
 ```
 
-TOML shape:
+YAML shape:
 
-```toml
-[tools]
-max_parallel_tools = 4
+```yaml
+tools:
+  max_parallel_tools: 4
 ```
 
 The setting must be a positive integer. Effective workers for a turn are:
@@ -134,7 +134,7 @@ Regression tests cover:
   original order;
 - `max_parallel_tools=1` preserving serial behavior;
 - default `max_parallel_tools=4`;
-- TOML, environment variable, and override precedence for
+- YAML, environment variable, and override precedence for
   `max_parallel_tools`;
 - repeated-call detection stopping before scheduling duplicate same-turn tools;
 - per-tool errors not cancelling sibling observations;

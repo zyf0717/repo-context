@@ -24,7 +24,7 @@ Purpose: Establish Python 3.13+ package and test baseline.
 - [x] T002 Create `src/repo_context/` package and `tests/` layout.
 - [x] T003 [P] Add console script target `repo-context`.
 - [x] T004 [P] Configure `pytest`, `ruff`, and selected type checker.
-- [x] T005 [P] Add `.env.example` and `.repo-context.toml` example.
+- [x] T005 [P] Add `.env.example` and `config.yaml` example.
 
 ## Phase 2: Foundational Read-only Tooling
 
@@ -49,7 +49,7 @@ Purpose: Convert model tool-call turns into safe local exploration and citations
 
 - [x] T013 [US1] Add `Settings`, `ExploreRequest`, `ExploreResult`, and error
   types in `src/repo_context/types.py` and `config.py`.
-- [x] T014 [P] [US1] Add config precedence tests for CLI overrides, env, TOML,
+- [x] T014 [P] [US1] Add config precedence tests for CLI overrides, env, YAML,
   and defaults.
 - [x] T015 [US1] Implement OpenAI-compatible HTTP client in
   `src/repo_context/llm.py`.

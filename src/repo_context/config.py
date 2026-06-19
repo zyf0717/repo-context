@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import os
-import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from repo_context.types import ExplorerError
+
+PROJECT_CONFIG_NAME = "config.yaml"
+PROJECT_ENV_NAME = ".env"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,13 +65,15 @@ class SettingsOverrides:
 def load_settings(
     *,
     repo_root: Path | None = None,
-    config_path: Path | None = None,
     overrides: SettingsOverrides | None = None,
 ) -> Settings:
+    _ = repo_root
     settings = Settings()
-    toml_path = config_path or _default_config_path(repo_root)
-    if toml_path is not None and toml_path.exists():
-        settings = _apply_toml(settings, toml_path)
+    project_root = _project_root()
+    yaml_path = _default_config_path(project_root)
+    if yaml_path is not None:
+        settings = _apply_yaml(settings, yaml_path)
+    settings = _apply_env(settings, _load_dotenv(project_root / PROJECT_ENV_NAME))
     settings = _apply_env(settings, os.environ)
     if overrides is not None:
         settings = _apply_overrides(settings, overrides)
@@ -74,20 +81,70 @@ def load_settings(
     return settings
 
 
-def _default_config_path(repo_root: Path | None) -> Path | None:
-    root = repo_root if repo_root is not None else Path.cwd()
-    return root / ".repo-context.toml"
+def _default_config_path(project_root: Path) -> Path | None:
+    path = project_root / PROJECT_CONFIG_NAME
+    return path if path.exists() else None
 
 
-def _apply_toml(settings: Settings, path: Path) -> Settings:
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _load_dotenv(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    if not path.is_file():
         raise ExplorerError(
             "CONFIG_INVALID",
-            f"Invalid TOML config: {path}",
+            f"Env path is not a file: {path}",
+        )
+    env: dict[str, str] = {}
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for line_number, raw_line in enumerate(lines, 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").lstrip()
+        if "=" not in line:
+            raise ExplorerError(
+                "CONFIG_INVALID",
+                f"Invalid .env line: {line_number}",
+            )
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ExplorerError(
+                "CONFIG_INVALID",
+                f"Invalid .env line: {line_number}",
+            )
+        env[key] = _parse_env_value(value.strip())
+    return env
+
+
+def _parse_env_value(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    if " #" in value:
+        return value.split(" #", 1)[0].rstrip()
+    return value
+
+
+def _apply_yaml(settings: Settings, path: Path) -> Settings:
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ExplorerError(
+            "CONFIG_INVALID",
+            f"Invalid YAML config: {path}",
             details={"error": str(exc)},
         ) from exc
+    if loaded is None:
+        data: dict[str, Any] = {}
+    elif isinstance(loaded, dict):
+        data = {str(key): value for key, value in loaded.items()}
+    else:
+        raise ExplorerError("CONFIG_INVALID", "YAML config must be a mapping")
 
     model = _section(data, "model")
     explorer = _section(data, "explorer")
@@ -141,11 +198,11 @@ def _apply_toml(settings: Settings, path: Path) -> Settings:
     )
 
 
-def _apply_env(settings: Settings, env: os._Environ[str]) -> Settings:
+def _apply_env(settings: Settings, env: Mapping[str, str | None]) -> Settings:
     return replace(
         settings,
-        base_url=env.get("FASTCONTEXT_BASE_URL", settings.base_url),
-        model=env.get("FASTCONTEXT_MODEL", settings.model),
+        base_url=env.get("FASTCONTEXT_BASE_URL") or settings.base_url,
+        model=env.get("FASTCONTEXT_MODEL") or settings.model,
         api_key=env.get("FASTCONTEXT_API_KEY", settings.api_key),
         max_turns=_env_int(env, "FASTCONTEXT_MAX_TURNS", settings.max_turns),
         max_read_bytes=_env_int(
@@ -270,12 +327,12 @@ def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
     return value
 
 
-def _env_int(env: os._Environ[str], name: str, default: int) -> int:
+def _env_int(env: Mapping[str, str | None], name: str, default: int) -> int:
     value = env.get(name)
     return default if value is None else _int_value(value, name)
 
 
-def _env_float(env: os._Environ[str], name: str, default: float) -> float:
+def _env_float(env: Mapping[str, str | None], name: str, default: float) -> float:
     value = env.get(name)
     return default if value is None else _float_value(value, name)
 

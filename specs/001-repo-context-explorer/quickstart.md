@@ -18,13 +18,23 @@ uv run repo-context --help
 
 ## Configure Endpoint
 
-Preferred project-local config:
+Default operator config in the `repo-context` project root:
 
 ```bash
-cp .repo-context.toml.example .repo-context.toml
+cp config.yaml.example config.yaml
 ```
 
-Or export environment variables:
+The inspected repository's config files are not loaded implicitly. This keeps
+the explorer's operator config independent of whatever target folder is being
+read.
+
+Use project-root `.env` or process environment variables for overrides:
+
+```bash
+cp .env.example .env
+```
+
+Or export process environment variables:
 
 ```bash
 export FASTCONTEXT_BASE_URL=http://localhost:8000/v1
@@ -42,31 +52,36 @@ export FASTCONTEXT_TEMPERATURE=0
 export FASTCONTEXT_MAX_PARALLEL_TOOLS=4
 ```
 
-Optional project config:
+Optional operator config:
 
-```toml
-[explorer]
-max_turns = 6
-citation = true
-ignore = [".git", ".venv", "node_modules", "dist", "build"]
+```yaml
+explorer:
+  max_turns: 6
+  citation: true
+  ignore:
+    - ".git"
+    - ".venv"
+    - "node_modules"
+    - "dist"
+    - "build"
 
-[model]
-base_url = "http://localhost:8000/v1"
-model = "your-model-name"
-api_key = ""
-timeout_seconds = 120
-max_completion_tokens = 512
-temperature = 0
+model:
+  base_url: "http://localhost:8000/v1"
+  model: "your-model-name"
+  api_key: ""
+  timeout_seconds: 120
+  max_completion_tokens: 512
+  temperature: 0
 
-[tools]
-max_read_bytes = 12000
-max_grep_results = 50
-max_observation_chars = 6000
-max_read_lines = 120
-max_parallel_tools = 4
+tools:
+  max_read_bytes: 12000
+  max_grep_results: 50
+  max_observation_chars: 6000
+  max_read_lines: 120
+  max_parallel_tools: 4
 ```
 
-The repository includes `.repo-context.toml.example` with this shape.
+The repository includes `config.yaml.example` with this shape.
 
 ## Run CLI Exploration
 
@@ -110,7 +125,8 @@ uv sync --extra mcp
 Server command:
 
 ```bash
-uv run repo-context mcp --transport stdio
+uv run repo-context mcp \
+  --transport stdio
 ```
 
 Expected tool:

@@ -13,7 +13,7 @@ layout, test layout, and documentation examples. Freeze the public contracts
 before writing the tool loop:
 
 - CLI command: `repo-context explore`.
-- Config sources: env plus `.repo-context.toml`.
+- Config sources: project-root `config.yaml`, project-root `.env`, and process env.
 - Local read-only tool contract: `read_file`, `repo_glob`, `repo_grep`.
 - MCP adapter contract: `explore_repository`.
 

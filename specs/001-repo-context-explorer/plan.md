@@ -119,7 +119,8 @@ entrypoints import the same config, safety, tools, and agent modules.
 ### Phase 4: CLI
 
 - Implement `repo-context explore`.
-- Load config from env, `.repo-context.toml`, and CLI overrides.
+- Load config from project-root `config.yaml`, project-root `.env`, process
+  environment, and CLI overrides.
 - Return explicit exit codes for config, repository, endpoint, and safety errors.
 
 ### Phase 5: MCP adapter

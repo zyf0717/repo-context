@@ -1,13 +1,31 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from repo_context import cli
+from repo_context import config as config_module
 from repo_context.config import Settings
 from repo_context.types import Citation, ExploreRequest, ExploreResult
+
+
+@pytest.fixture(autouse=True)
+def _isolated_config_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for key in list(os.environ):
+        if key.startswith("FASTCONTEXT_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(
+        config_module,
+        "_project_root",
+        lambda: tmp_path,
+    )
+    monkeypatch.chdir(tmp_path)
 
 
 def test_cli_text_output_is_citation_first(
@@ -89,6 +107,70 @@ def test_cli_missing_endpoint_is_configuration_error(
     captured = capsys.readouterr()
     assert code == 3
     assert "CONFIG_MISSING_ENDPOINT" in captured.err
+
+
+def test_cli_uses_project_root_config_and_dotenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (tmp_path / "config.yaml").write_text(
+        """
+model:
+  base_url: "http://yaml/v1"
+  model: "yaml-model"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        "FASTCONTEXT_BASE_URL=http://dotenv/v1\n",
+        encoding="utf-8",
+    )
+
+    def fake_explore(request: ExploreRequest, settings: Settings) -> ExploreResult:
+        assert settings.base_url == "http://dotenv/v1"
+        assert settings.model == "yaml-model"
+        return ExploreResult(
+            query=request.query,
+            repo_root=str(repo),
+            answer="answer.py:1",
+            citations=[Citation("answer.py", 1, 1)],
+            turns_used=1,
+        )
+
+    monkeypatch.setattr(cli, "explore", fake_explore)
+
+    code = cli.main(
+        [
+            "explore",
+            "--query",
+            "Find answer",
+            "--repo",
+            str(repo),
+        ]
+    )
+
+    assert code == 0
+    assert capsys.readouterr().out.strip() == "answer.py:1"
+
+
+def test_cli_rejects_config_option() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            [
+                "explore",
+                "--query",
+                "Find answer",
+                "--repo",
+                ".",
+                "--config",
+                "external.yaml",
+            ]
+        )
+
+    assert exc_info.value.code == 2
 
 
 def test_cli_exact_fast_path_text_without_endpoint(

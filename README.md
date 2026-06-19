@@ -15,7 +15,8 @@ It also includes spec `002` hardening for deterministic controller-owned
 finalization and citation-mode rendering, plus spec `003` latency controls for
 bounded endpoint prompt growth, and spec `004` same-turn parallel local tool
 execution. Spec `005` adds a deterministic exact path/symbol fast path for
-trivial evidence lookups.
+trivial evidence lookups. Spec `006` fixes configuration ownership to
+project-root `config.yaml` plus `.env`/environment overrides.
 
 Primary planning artifacts:
 
@@ -26,6 +27,7 @@ Primary planning artifacts:
 - [Latency-bounded explorer harness](specs/003-latency-bounded-explorer-harness/spec.md)
 - [FastContext-compatible parallel tool executor](specs/004-fastcontext-parallel-tool-executor/spec.md)
 - [Exact path/symbol fast path](specs/005-exact-path-symbol-fast-path/spec.md)
+- [Project-root YAML and env configuration](specs/006-project-root-yaml-dotenv-config/spec.md)
 - [Implementation order](docs/implementation-order.md)
 
 ## FastContext Alignment
@@ -56,20 +58,24 @@ as a tool during its workflow. MCP delegates to the same core as the CLI.
 
 ### Configure
 
-Prefer `.repo-context.toml` for stable project-local settings:
+The default config lives in the `repo-context` project root:
 
 ```bash
-cp .repo-context.toml.example .repo-context.toml
+cp config.yaml.example config.yaml
 ```
 
-Use environment variables for temporary overrides, CI, or secrets:
+The inspected repository's config files are not loaded implicitly. This keeps
+the explorer's operator config independent of whatever target folder is being
+read.
+
+Use project-root `.env` or process environment variables for local overrides,
+CI, or secrets:
 
 ```bash
 cp .env.example .env
 ```
 
-`repo-context` reads real environment variables from the process environment;
-it does not load `.env` by itself. Configure at least:
+Configure at least:
 
 ```text
 FASTCONTEXT_BASE_URL=http://localhost:8000/v1
@@ -88,7 +94,7 @@ endpoint when the controller can validate the citation deterministically.
 Configuration precedence:
 
 ```text
-defaults < .repo-context.toml < environment variables < CLI overrides
+defaults < project-root config.yaml < project-root .env < process environment < CLI overrides
 ```
 
 ### CLI
@@ -129,7 +135,8 @@ uv sync --extra mcp
 Development server command:
 
 ```bash
-uv run repo-context mcp --transport stdio
+uv run repo-context mcp \
+  --transport stdio
 ```
 
 Tool: `explore_repository(query, repo_root?, max_turns?, citation?)`

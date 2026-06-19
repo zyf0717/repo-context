@@ -113,8 +113,8 @@ Acceptance Scenarios:
 - FR-002: The CLI MUST accept `--query`, `--repo`, `--max-turns`, `--citation`,
   and `--format text|json`.
 - FR-003: The system MUST target Python 3.13+.
-- FR-004: The system MUST support configuration from environment variables and
-  `.repo-context.toml`.
+- FR-004: The system MUST support configuration from project-root
+  `config.yaml`, project-root `.env`, and process environment variables.
 - FR-005: The system MUST communicate with an OpenAI-compatible chat completion
   endpoint for the first backend target.
 - FR-006: The system MUST expose only read-only repository tools to the model:

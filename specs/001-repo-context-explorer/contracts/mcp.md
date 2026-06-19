@@ -11,6 +11,10 @@ Expected development command:
 uv run repo-context mcp --transport stdio
 ```
 
+Options:
+
+- `--transport stdio`: MCP transport. Only `stdio` is in scope.
+
 ## Tool: `explore_repository`
 
 Purpose: Explore a local repository using the same core as the CLI and return

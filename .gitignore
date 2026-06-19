@@ -162,6 +162,9 @@ venv.bak/
 
 # repo-context local runtime config/state
 .repo-context.toml
+.repo-context.yaml
+.repo-context.yml
+config.yaml
 .fastcontext/
 
 # Spyder project settings

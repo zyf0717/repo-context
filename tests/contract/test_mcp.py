@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from repo_context import config as config_module
 from repo_context import mcp_server
 from repo_context.agent import explore
 from repo_context.config import Settings
@@ -62,6 +64,51 @@ def test_mcp_handler_returns_structured_error_for_invalid_root(tmp_path: Path) -
     )
 
     assert result["error"]["code"] == "REPO_NOT_FOUND"  # type: ignore[index]
+
+
+def test_mcp_handler_uses_project_root_config_and_dotenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    for key in list(os.environ):
+        if key.startswith("FASTCONTEXT_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(config_module, "_project_root", lambda: tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        """
+model:
+  base_url: "http://yaml/v1"
+  model: "yaml-model"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        "FASTCONTEXT_BASE_URL=http://dotenv/v1\n",
+        encoding="utf-8",
+    )
+
+    def fake_core(request: ExploreRequest, core_settings: Settings) -> ExploreResult:
+        captured["settings"] = core_settings
+        return ExploreResult(
+            query=request.query,
+            repo_root=str(tmp_path),
+            answer="src/api/validation.py:1",
+            citations=[Citation("src/api/validation.py", 1, 1)],
+            turns_used=1,
+        )
+
+    result = explore_repository_handler(
+        query="Find validation",
+        repo_root=str(tmp_path),
+        core=fake_core,
+    )
+
+    settings = captured["settings"]
+    assert isinstance(settings, Settings)
+    assert settings.base_url == "http://dotenv/v1"
+    assert settings.model == "yaml-model"
+    assert result["answer"] == "src/api/validation.py:1"
 
 
 def test_mcp_handler_returns_core_normalized_citation_result(

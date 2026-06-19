@@ -6,8 +6,8 @@ semantics.
 
 ## Settings
 
-Represents effective configuration after CLI, env, and `.repo-context.toml`
-resolution.
+Represents effective configuration after CLI, project-root `config.yaml`,
+project-root `.env`, and process environment resolution.
 
 Fields:
 

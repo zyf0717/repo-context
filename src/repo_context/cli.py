@@ -84,4 +84,3 @@ def _exit_code(error: ExplorerError) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
